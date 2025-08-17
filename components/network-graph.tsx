@@ -20,7 +20,13 @@ interface Link extends d3.SimulationLinkDatum<Node> {
   target: string | Node
 }
 
-const GROUPS = [
+interface Group {
+  id: string
+  name: string
+  color: string
+}
+
+const INITIAL_GROUPS: Group[] = [
   { id: "technology", name: "Tecnología", color: "#3b82f6" },
   { id: "business", name: "Negocios", color: "#ef4444" },
   { id: "science", name: "Ciencia", color: "#10b981" },
@@ -45,12 +51,16 @@ const INITIAL_LINKS: Link[] = [
 
 export default function NetworkGraph() {
   const svgRef = useRef<SVGSVGElement>(null)
+  const [groups, setGroups] = useState<Group[]>(INITIAL_GROUPS)
   const [nodes, setNodes] = useState<Node[]>(INITIAL_NODES)
   const [links, setLinks] = useState<Link[]>(INITIAL_LINKS)
-  const [currentGroup, setCurrentGroup] = useState<string>("technology")
+  const [currentGroup, setCurrentGroup] = useState<string>(INITIAL_GROUPS[0].id)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
   const [newNodeName, setNewNodeName] = useState("")
   const [newNodeGroup, setNewNodeGroup] = useState("")
+  const [newGroupName, setNewGroupName] = useState("")
+  const [newGroupColor, setNewGroupColor] = useState("#000000")
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
 
@@ -78,25 +88,25 @@ export default function NetworkGraph() {
 
   const navigateToGroup = useCallback(
     (direction: "next" | "prev") => {
-      const currentIndex = GROUPS.findIndex((g) => g.id === currentGroup)
+      const currentIndex = groups.findIndex((g) => g.id === currentGroup)
       let newIndex
 
       if (direction === "next") {
-        newIndex = (currentIndex + 1) % GROUPS.length
+        newIndex = (currentIndex + 1) % groups.length
       } else {
-        newIndex = currentIndex === 0 ? GROUPS.length - 1 : currentIndex - 1
+        newIndex = currentIndex === 0 ? groups.length - 1 : currentIndex - 1
       }
 
-      setCurrentGroup(GROUPS[newIndex].id)
+      setCurrentGroup(groups[newIndex].id)
       setShowAllGroups(false)
     },
-    [currentGroup],
+    [currentGroup, groups],
   )
 
   const addNode = useCallback(() => {
     if (!newNodeName.trim() || !newNodeGroup) return
 
-    const groupData = GROUPS.find((g) => g.id === newNodeGroup)
+    const groupData = groups.find((g) => g.id === newNodeGroup)
     if (!groupData) return
 
     const newNode: Node = {
@@ -106,18 +116,54 @@ export default function NetworkGraph() {
       color: groupData.color,
     }
 
+    const existingGroupNodes = nodes.filter((n) => n.group === newNodeGroup)
+    const newLinks: Link[] = existingGroupNodes.map((n) => ({ source: newNode.id, target: n.id }))
+
     setNodes((prev) => [...prev, newNode])
+    if (newLinks.length > 0) {
+      setLinks((prev) => [...prev, ...newLinks])
+    }
     setNewNodeName("")
     setNewNodeGroup("")
     setIsDialogOpen(false)
     setCurrentGroup(newNodeGroup)
     setShowAllGroups(false)
-  }, [newNodeName, newNodeGroup])
+  }, [newNodeName, newNodeGroup, nodes, groups])
+
+  const addGroup = useCallback(() => {
+    if (!newGroupName.trim()) return
+    const id = newGroupName.trim().toLowerCase().replace(/\s+/g, "-")
+    const newGroup: Group = { id, name: newGroupName.trim(), color: newGroupColor }
+    setGroups((prev) => [...prev, newGroup])
+    setNewGroupName("")
+    setNewGroupColor("#000000")
+  }, [newGroupName, newGroupColor])
+
+  const deleteGroup = useCallback(
+    (id: string) => {
+      setGroups((prev) => prev.filter((g) => g.id !== id))
+      setNodes((prev) => prev.filter((n) => n.group !== id))
+      if (currentGroup === id && groups.length > 0) {
+        const next = groups.find((g) => g.id !== id)
+        if (next) setCurrentGroup(next.id)
+      }
+    },
+    [currentGroup, groups],
+  )
+
+  const updateGroupName = useCallback((id: string, name: string) => {
+    setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, name } : g)))
+  }, [])
 
   useEffect(() => {
     if (!isMounted) return
 
     const handleKeyPress = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.key.toLowerCase() === "n") {
+        event.preventDefault()
+        setIsGroupDialogOpen(true)
+        return
+      }
       switch (event.key) {
         case "ArrowRight":
           event.preventDefault()
@@ -144,10 +190,7 @@ export default function NetworkGraph() {
   }, [navigateToGroup, currentGroup, isMounted])
 
   useEffect(() => {
-    if (!isMounted || !svgRef.current) {
-      console.log("[v0] SVG ref not ready, skipping D3 initialization")
-      return
-    }
+    if (!isMounted || !svgRef.current) return
 
     const svgElement = svgRef.current
     const svg = d3.select(svgElement)
@@ -155,70 +198,70 @@ export default function NetworkGraph() {
     const width = typeof window !== "undefined" ? window.innerWidth : 800
     const height = typeof window !== "undefined" ? window.innerHeight : 600
 
-    svg.selectAll("*").remove()
+    const container = svg.append("g").attr("class", "zoom-container")
 
-    const visibleNodes = getVisibleNodes()
-    const visibleLinks = getVisibleLinks()
+    svg.call(
+      d3
+        .zoom<SVGSVGElement, unknown>()
+        .scaleExtent([0.1, 4])
+        .on("zoom", (event) => {
+          container.attr("transform", event.transform)
+        }),
+    )
 
-    if (visibleNodes.length === 0) {
-      console.log("[v0] No visible nodes, skipping graph creation")
-      return
-    }
+    container.append("g").attr("class", "links")
+    container.append("g").attr("class", "nodes")
+    container.append("g").attr("class", "labels")
 
-    const nodesCopy = visibleNodes.map((d) => ({ ...d }))
-    const linksCopy = visibleLinks.map((d) => ({ ...d }))
-
-    if (simulationRef.current) {
-      simulationRef.current.stop()
-      simulationRef.current.on("tick", null) // Remove old tick handler
-      simulationRef.current = null
-    }
-
-    console.log("[v0] Creating D3 simulation with", nodesCopy.length, "nodes")
-
-    const simulation = d3
-      .forceSimulation(nodesCopy)
-      .force(
-        "link",
-        d3
-          .forceLink<Node, Link>(linksCopy)
-          .id((d) => d.id)
-          .distance(100)
-          .strength(0.5),
-      )
+    simulationRef.current = d3
+      .forceSimulation<Node, Link>()
+      .force("link", d3.forceLink<Node, Link>().id((d) => d.id).distance(100).strength(0.5))
       .force("charge", d3.forceManyBody().strength(-300))
       .force("center", d3.forceCenter(width / 2, height / 2))
       .force("collision", d3.forceCollide().radius(35))
 
-    simulationRef.current = simulation
+    return () => {
+      simulationRef.current?.stop()
+      simulationRef.current?.on("tick", null)
+      simulationRef.current = null
+      svg.selectAll("*").remove()
+    }
+  }, [isMounted])
 
-    const container = svg.append("g").attr("class", "zoom-container")
+  useEffect(() => {
+    if (!isMounted || !svgRef.current || !simulationRef.current) return
 
-    const zoom = d3
-      .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 4])
-      .on("zoom", (event) => {
-        if (container.node()) {
-          container.attr("transform", event.transform)
-        }
+    const svg = d3.select(svgRef.current)
+    const container = svg.select<SVGGElement>("g.zoom-container")
+    const linksGroup = container.select<SVGGElement>("g.links")
+    const nodesGroup = container.select<SVGGElement>("g.nodes")
+    const labelsGroup = container.select<SVGGElement>("g.labels")
+
+    const nodesData = getVisibleNodes()
+    const linksData = getVisibleLinks()
+
+    const linkSelection = linksGroup
+      .selectAll<SVGLineElement, Link>("line")
+      .data(linksData, (d: any) => {
+        const s = typeof d.source === "string" ? d.source : d.source.id
+        const t = typeof d.target === "string" ? d.target : d.target.id
+        return `${s}-${t}`
       })
 
-    svg.call(zoom)
-
-    const linksGroup = container.append("g").attr("class", "links")
-    const linkElements = linksGroup
-      .selectAll("line")
-      .data(linksCopy)
+    linkSelection
       .enter()
       .append("line")
       .attr("stroke", "#999")
       .attr("stroke-opacity", 0.6)
       .attr("stroke-width", 2)
 
-    const nodesGroup = container.append("g").attr("class", "nodes")
-    const nodeElements = nodesGroup
-      .selectAll("circle")
-      .data(nodesCopy)
+    linkSelection.exit().remove()
+
+    const nodeSelection = nodesGroup
+      .selectAll<SVGCircleElement, Node>("circle")
+      .data(nodesData, (d) => d.id)
+
+    const nodeEnter = nodeSelection
       .enter()
       .append("circle")
       .attr("r", 20)
@@ -226,111 +269,77 @@ export default function NetworkGraph() {
       .attr("stroke", "#fff")
       .attr("stroke-width", 2)
       .style("cursor", "pointer")
+      .call(
+        d3
+          .drag<SVGCircleElement, Node>()
+          .on("start", (event, d) => {
+            if (!event.active) simulationRef.current!.alphaTarget(0.3).restart()
+            d.fx = d.x
+            d.fy = d.y
+          })
+          .on("drag", (event, d) => {
+            d.fx = event.x
+            d.fy = event.y
+          })
+          .on("end", (event, d) => {
+            if (!event.active) simulationRef.current!.alphaTarget(0)
+            d.fx = null
+            d.fy = null
+          }),
+      )
 
-    nodeElements.call(
-      d3
-        .drag<SVGCircleElement, Node>()
-        .on("start", (event, d) => {
-          if (!event.active && simulation) simulation.alphaTarget(0.3).restart()
-          d.fx = d.x
-          d.fy = d.y
-        })
-        .on("drag", (event, d) => {
-          d.fx = event.x
-          d.fy = event.y
-        })
-        .on("end", (event, d) => {
-          if (!event.active && simulation) simulation.alphaTarget(0)
-          d.fx = null
-          d.fy = null
-        }),
-    )
+    nodeSelection.exit().remove()
 
-    const labelsGroup = container.append("g").attr("class", "labels")
-    const labelElements = labelsGroup
-      .selectAll("text")
-      .data(nodesCopy)
+    const mergedNodes = nodeEnter.merge(nodeSelection)
+
+    const labelSelection = labelsGroup
+      .selectAll<SVGTextElement, Node>("text")
+      .data(nodesData, (d) => d.id)
+
+    const labelEnter = labelSelection
       .enter()
       .append("text")
-      .text((d) => d.name)
       .attr("font-size", 12)
       .attr("font-family", "sans-serif")
       .attr("text-anchor", "middle")
-      .attr("dy", ".35em")
       .attr("fill", "#fff")
       .attr("pointer-events", "none")
 
+    labelSelection.exit().remove()
+
+    const mergedLabels = labelEnter.merge(labelSelection)
+    mergedLabels.text((d) => d.name)
+
+    const simulation = simulationRef.current
+    simulation.nodes(nodesData)
+    ;(simulation.force("link") as d3.ForceLink<Node, Link>).links(linksData)
+
     simulation.on("tick", () => {
-      // Check if elements still exist and are valid DOM nodes
-      const linkNodes = linkElements.nodes()
-      const nodeNodes = nodeElements.nodes()
-      const labelNodes = labelElements.nodes()
+      linksGroup
+        .selectAll<SVGLineElement, Link>("line")
+        .attr("x1", (d) => {
+          const source = d.source as Node
+          return source.x || 0
+        })
+        .attr("y1", (d) => {
+          const source = d.source as Node
+          return source.y || 0
+        })
+        .attr("x2", (d) => {
+          const target = d.target as Node
+          return target.x || 0
+        })
+        .attr("y2", (d) => {
+          const target = d.target as Node
+          return target.y || 0
+        })
 
-      if (!linkNodes.length || !nodeNodes.length || !labelNodes.length) {
-        console.log("[v0] Elements not available during tick, stopping simulation")
-        simulation.stop()
-        return
-      }
+      mergedNodes.attr("cx", (d) => d.x || 0).attr("cy", (d) => d.y || 0)
 
-      const isValidDomNode = (el: unknown): el is Element =>
-        !!el && typeof (el as Element).nodeName === "string"
-
-      if (!linkNodes.every(isValidDomNode)) {
-        console.log("[v0] Invalid link elements detected, stopping simulation")
-        simulation.stop()
-        return
-      }
-
-      if (!nodeNodes.every(isValidDomNode)) {
-        console.log("[v0] Invalid node elements detected, stopping simulation")
-        simulation.stop()
-        return
-      }
-
-      if (!labelNodes.every(isValidDomNode)) {
-        console.log("[v0] Invalid label elements detected, stopping simulation")
-        simulation.stop()
-        return
-      }
-
-      try {
-        linkElements
-          .attr("x1", (d) => {
-            const source = d.source as Node
-            return source.x || 0
-          })
-          .attr("y1", (d) => {
-            const source = d.source as Node
-            return source.y || 0
-          })
-          .attr("x2", (d) => {
-            const target = d.target as Node
-            return target.x || 0
-          })
-          .attr("y2", (d) => {
-            const target = d.target as Node
-            return target.y || 0
-          })
-
-        nodeElements.attr("cx", (d) => d.x || 0).attr("cy", (d) => d.y || 0)
-
-        labelElements.attr("x", (d) => d.x || 0).attr("y", (d) => d.y || 0)
-      } catch (error) {
-        console.log("[v0] Error during tick update, stopping simulation:", error)
-        simulation.stop()
-      }
+      mergedLabels.attr("x", (d) => d.x || 0).attr("y", (d) => (d.y || 0) + 30)
     })
 
-    console.log("[v0] D3 graph initialized successfully")
-
-    return () => {
-      console.log("[v0] Cleaning up D3 simulation")
-      if (simulationRef.current) {
-        simulationRef.current.stop()
-        simulationRef.current.on("tick", null)
-        simulationRef.current = null
-      }
-    }
+    simulation.alpha(0.5).restart()
   }, [getVisibleNodes, getVisibleLinks, isMounted])
 
   if (!isMounted) {
@@ -368,7 +377,7 @@ export default function NetworkGraph() {
                   <SelectValue placeholder="Selecciona un grupo" />
                 </SelectTrigger>
                 <SelectContent>
-                  {GROUPS.map((group) => (
+                  {groups.map((group) => (
                     <SelectItem key={group.id} value={group.id}>
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: group.color }} />
@@ -382,6 +391,39 @@ export default function NetworkGraph() {
             <Button onClick={addNode} className="w-full">
               Agregar Nodo
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isGroupDialogOpen} onOpenChange={setIsGroupDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Categorías</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {groups.map((group) => (
+              <div key={group.id} className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: group.color }} />
+                <Input value={group.name} onChange={(e) => updateGroupName(group.id, e.target.value)} />
+                <Button variant="destructive" size="sm" onClick={() => deleteGroup(group.id)}>
+                  Eliminar
+                </Button>
+              </div>
+            ))}
+            <div className="flex items-center gap-2 pt-4">
+              <Input
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                placeholder="Nueva categoría"
+              />
+              <Input
+                type="color"
+                value={newGroupColor}
+                onChange={(e) => setNewGroupColor(e.target.value)}
+                className="w-12 p-0"
+              />
+              <Button onClick={addGroup}>Agregar</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
