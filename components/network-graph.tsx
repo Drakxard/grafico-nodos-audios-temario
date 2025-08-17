@@ -62,8 +62,11 @@ export default function NetworkGraph() {
   const [isMounted, setIsMounted] = useState(false)
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
+  const [nodePadding, setNodePadding] = useState(35)
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
+  const currentGroupRef = useRef(currentGroup)
+  const showAllGroupsRef = useRef(showAllGroups)
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
@@ -91,21 +94,20 @@ export default function NetworkGraph() {
     setIsMounted(true)
   }, [])
 
-  const getVisibleNodes = useCallback(() => {
-    if (showAllGroups) {
-      return nodes
+  useEffect(() => {
+    currentGroupRef.current = currentGroup
+    if (simulationRef.current) {
+      simulationRef.current.alpha(0.1).restart()
     }
-    return nodes.filter((node) => node.group === currentGroup)
-  }, [nodes, currentGroup, showAllGroups])
+  }, [currentGroup])
 
-  const getVisibleLinks = useCallback(() => {
-    const visibleNodeIds = new Set(getVisibleNodes().map((n) => n.id))
-    return links.filter((link) => {
-      const sourceId = typeof link.source === "string" ? link.source : link.source.id
-      const targetId = typeof link.target === "string" ? link.target : link.target.id
-      return visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId)
-    })
-  }, [links, getVisibleNodes])
+  useEffect(() => {
+    showAllGroupsRef.current = showAllGroups
+    if (simulationRef.current) {
+      simulationRef.current.alpha(0.1).restart()
+    }
+  }, [showAllGroups])
+
 
   const navigateToGroup = useCallback(
     (direction: "next" | "prev") => {
@@ -175,14 +177,16 @@ export default function NetworkGraph() {
         case "n":
           if (event.ctrlKey) {
             event.preventDefault()
+            event.stopPropagation()
+            event.stopImmediatePropagation()
             setIsGroupDialogOpen(true)
           }
           break
       }
     }
 
-    window.addEventListener("keydown", handleKeyPress)
-    return () => window.removeEventListener("keydown", handleKeyPress)
+    window.addEventListener("keydown", handleKeyPress, true)
+    return () => window.removeEventListener("keydown", handleKeyPress, true)
   }, [navigateToGroup, currentGroup, isMounted])
 
   useEffect(() => {
@@ -199,16 +203,13 @@ export default function NetworkGraph() {
 
     svg.selectAll("*").remove()
 
-      const visibleNodes = getVisibleNodes()
-      const visibleLinks = getVisibleLinks()
+    const nodesCopy = nodes
+    const linksCopy = links
 
-      if (visibleNodes.length === 0) {
-        console.log("[v0] No visible nodes, skipping graph creation")
-        return
-      }
-
-      const nodesCopy = visibleNodes
-      const linksCopy = visibleLinks
+    if (nodesCopy.length === 0) {
+      console.log("[v0] No nodes, skipping graph creation")
+      return
+    }
 
     if (simulationRef.current) {
       simulationRef.current.stop()
@@ -230,7 +231,7 @@ export default function NetworkGraph() {
       )
       .force("charge", d3.forceManyBody().strength(-300))
       .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius(35))
+      .force("collision", d3.forceCollide().radius(nodePadding))
 
     simulationRef.current = simulation
 
@@ -298,7 +299,7 @@ export default function NetworkGraph() {
         .attr("font-size", 12)
         .attr("font-family", "sans-serif")
         .attr("text-anchor", "middle")
-        .attr("fill", "#fff")
+        .attr("fill", (d) => d.color)
         .attr("pointer-events", "none")
 
     simulation.on("tick", () => {
@@ -335,6 +336,9 @@ export default function NetworkGraph() {
       }
 
       try {
+        const isNodeVisible = (node: Node) =>
+          showAllGroupsRef.current || node.group === currentGroupRef.current
+
         linkElements
           .attr("x1", (d) => {
             const source = d.source as Node
@@ -352,12 +356,22 @@ export default function NetworkGraph() {
             const target = d.target as Node
             return target.y || 0
           })
+          .style("display", (d) => {
+            const source = d.source as Node
+            const target = d.target as Node
+            return isNodeVisible(source) && isNodeVisible(target) ? "block" : "none"
+          })
 
-          nodeElements.attr("cx", (d) => d.x || 0).attr("cy", (d) => d.y || 0)
+        nodeElements
+          .attr("cx", (d) => d.x || 0)
+          .attr("cy", (d) => d.y || 0)
+          .style("display", (d) => (isNodeVisible(d) ? "block" : "none"))
 
-          labelElements
-            .attr("x", (d) => d.x || 0)
-            .attr("y", (d) => (d.y || 0) + 30)
+        labelElements
+          .attr("x", (d) => d.x || 0)
+          .attr("y", (d) => (d.y || 0) + 30)
+          .attr("fill", (d) => d.color)
+          .style("display", (d) => (isNodeVisible(d) ? "block" : "none"))
       } catch (error) {
         console.log("[v0] Error during tick update, stopping simulation:", error)
         simulation.stop()
@@ -374,7 +388,17 @@ export default function NetworkGraph() {
         simulationRef.current = null
       }
     }
-  }, [getVisibleNodes, getVisibleLinks, isMounted])
+  }, [nodes, links, isMounted])
+
+  useEffect(() => {
+    if (simulationRef.current) {
+      simulationRef.current.force(
+        "collision",
+        d3.forceCollide<Node>().radius(nodePadding),
+      )
+      simulationRef.current.alpha(0.5).restart()
+    }
+  }, [nodePadding])
 
   if (!isMounted) {
     return <div className="w-full h-screen bg-gray-50 dark:bg-gray-900" />
@@ -469,6 +493,20 @@ export default function NetworkGraph() {
                 </div>
               </div>
             ))}
+
+            <div className="pt-2">
+              <Label htmlFor="padding-slider">Espaciado entre nodos: {nodePadding}</Label>
+              <input
+                id="padding-slider"
+                type="range"
+                min="20"
+                max="100"
+                value={nodePadding}
+                onChange={(e) => setNodePadding(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+
             <div className="flex items-center gap-2 pt-2">
               <Input
                 placeholder="Nueva categoría"
