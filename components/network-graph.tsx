@@ -20,7 +20,13 @@ interface Link extends d3.SimulationLinkDatum<Node> {
   target: string | Node
 }
 
-const GROUPS = [
+interface Group {
+  id: string
+  name: string
+  color: string
+}
+
+const INITIAL_GROUPS: Group[] = [
   { id: "technology", name: "Tecnología", color: "#3b82f6" },
   { id: "business", name: "Negocios", color: "#ef4444" },
   { id: "science", name: "Ciencia", color: "#10b981" },
@@ -47,14 +53,39 @@ export default function NetworkGraph() {
   const svgRef = useRef<SVGSVGElement>(null)
   const [nodes, setNodes] = useState<Node[]>(INITIAL_NODES)
   const [links, setLinks] = useState<Link[]>(INITIAL_LINKS)
-  const [currentGroup, setCurrentGroup] = useState<string>("technology")
+  const [groups, setGroups] = useState<Group[]>(INITIAL_GROUPS)
+  const [currentGroup, setCurrentGroup] = useState<string>(INITIAL_GROUPS[0].id)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newNodeName, setNewNodeName] = useState("")
   const [newNodeGroup, setNewNodeGroup] = useState("")
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
+  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
+  const [newGroupName, setNewGroupName] = useState("")
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
+
+  const randomColor = () =>
+    "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
+
+  const deleteGroup = (id: string) => {
+    const nextGroups = groups.filter((g) => g.id !== id)
+    const remainingNodeIds = new Set(
+      nodes.filter((n) => n.group !== id).map((n) => n.id),
+    )
+    setGroups(nextGroups)
+    setNodes((prev) => prev.filter((n) => n.group !== id))
+    setLinks((prev) =>
+      prev.filter((l) => {
+        const sourceId = typeof l.source === "string" ? l.source : l.source.id
+        const targetId = typeof l.target === "string" ? l.target : l.target.id
+        return remainingNodeIds.has(sourceId) && remainingNodeIds.has(targetId)
+      }),
+    )
+    if (currentGroup === id) {
+      setCurrentGroup(nextGroups[0]?.id || "")
+    }
+  }
 
   useEffect(() => {
     setIsMounted(true)
@@ -78,25 +109,26 @@ export default function NetworkGraph() {
 
   const navigateToGroup = useCallback(
     (direction: "next" | "prev") => {
-      const currentIndex = GROUPS.findIndex((g) => g.id === currentGroup)
+      const currentIndex = groups.findIndex((g) => g.id === currentGroup)
+      if (currentIndex === -1 || groups.length === 0) return
       let newIndex
 
       if (direction === "next") {
-        newIndex = (currentIndex + 1) % GROUPS.length
+        newIndex = (currentIndex + 1) % groups.length
       } else {
-        newIndex = currentIndex === 0 ? GROUPS.length - 1 : currentIndex - 1
+        newIndex = currentIndex === 0 ? groups.length - 1 : currentIndex - 1
       }
 
-      setCurrentGroup(GROUPS[newIndex].id)
+      setCurrentGroup(groups[newIndex].id)
       setShowAllGroups(false)
     },
-    [currentGroup],
+    [currentGroup, groups],
   )
 
   const addNode = useCallback(() => {
     if (!newNodeName.trim() || !newNodeGroup) return
 
-    const groupData = GROUPS.find((g) => g.id === newNodeGroup)
+    const groupData = groups.find((g) => g.id === newNodeGroup)
     if (!groupData) return
 
     const newNode: Node = {
@@ -106,13 +138,17 @@ export default function NetworkGraph() {
       color: groupData.color,
     }
 
+    const targetNodes = nodes.filter((n) => n.group === newNodeGroup)
+    const newLinks = targetNodes.map((n) => ({ source: newNode.id, target: n.id }))
+
     setNodes((prev) => [...prev, newNode])
+    setLinks((prev) => [...prev, ...newLinks])
     setNewNodeName("")
     setNewNodeGroup("")
     setIsDialogOpen(false)
     setCurrentGroup(newNodeGroup)
     setShowAllGroups(false)
-  }, [newNodeName, newNodeGroup])
+  }, [newNodeName, newNodeGroup, groups, nodes])
 
   useEffect(() => {
     if (!isMounted) return
@@ -136,6 +172,12 @@ export default function NetworkGraph() {
           event.preventDefault()
           setShowAllGroups(true)
           break
+        case "n":
+          if (event.ctrlKey) {
+            event.preventDefault()
+            setIsGroupDialogOpen(true)
+          }
+          break
       }
     }
 
@@ -157,16 +199,16 @@ export default function NetworkGraph() {
 
     svg.selectAll("*").remove()
 
-    const visibleNodes = getVisibleNodes()
-    const visibleLinks = getVisibleLinks()
+      const visibleNodes = getVisibleNodes()
+      const visibleLinks = getVisibleLinks()
 
-    if (visibleNodes.length === 0) {
-      console.log("[v0] No visible nodes, skipping graph creation")
-      return
-    }
+      if (visibleNodes.length === 0) {
+        console.log("[v0] No visible nodes, skipping graph creation")
+        return
+      }
 
-    const nodesCopy = visibleNodes.map((d) => ({ ...d }))
-    const linksCopy = visibleLinks.map((d) => ({ ...d }))
+      const nodesCopy = visibleNodes
+      const linksCopy = visibleLinks
 
     if (simulationRef.current) {
       simulationRef.current.stop()
@@ -247,18 +289,17 @@ export default function NetworkGraph() {
     )
 
     const labelsGroup = container.append("g").attr("class", "labels")
-    const labelElements = labelsGroup
-      .selectAll("text")
-      .data(nodesCopy)
-      .enter()
-      .append("text")
-      .text((d) => d.name)
-      .attr("font-size", 12)
-      .attr("font-family", "sans-serif")
-      .attr("text-anchor", "middle")
-      .attr("dy", ".35em")
-      .attr("fill", "#fff")
-      .attr("pointer-events", "none")
+      const labelElements = labelsGroup
+        .selectAll("text")
+        .data(nodesCopy)
+        .enter()
+        .append("text")
+        .text((d) => d.name)
+        .attr("font-size", 12)
+        .attr("font-family", "sans-serif")
+        .attr("text-anchor", "middle")
+        .attr("fill", "#fff")
+        .attr("pointer-events", "none")
 
     simulation.on("tick", () => {
       // Check if elements still exist and are valid DOM nodes
@@ -312,9 +353,11 @@ export default function NetworkGraph() {
             return target.y || 0
           })
 
-        nodeElements.attr("cx", (d) => d.x || 0).attr("cy", (d) => d.y || 0)
+          nodeElements.attr("cx", (d) => d.x || 0).attr("cy", (d) => d.y || 0)
 
-        labelElements.attr("x", (d) => d.x || 0).attr("y", (d) => d.y || 0)
+          labelElements
+            .attr("x", (d) => d.x || 0)
+            .attr("y", (d) => (d.y || 0) + 30)
       } catch (error) {
         console.log("[v0] Error during tick update, stopping simulation:", error)
         simulation.stop()
@@ -368,7 +411,7 @@ export default function NetworkGraph() {
                   <SelectValue placeholder="Selecciona un grupo" />
                 </SelectTrigger>
                 <SelectContent>
-                  {GROUPS.map((group) => (
+                  {groups.map((group) => (
                     <SelectItem key={group.id} value={group.id}>
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: group.color }} />
@@ -382,6 +425,74 @@ export default function NetworkGraph() {
             <Button onClick={addNode} className="w-full">
               Agregar Nodo
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isGroupDialogOpen} onOpenChange={setIsGroupDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Categorías</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {groups.map((group) => (
+              <div key={group.id} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={group.name}
+                    onChange={(e) =>
+                      setGroups((prev) =>
+                        prev.map((g) =>
+                          g.id === group.id ? { ...g, name: e.target.value } : g,
+                        ),
+                      )
+                    }
+                  />
+                  <Button
+                    variant="destructive"
+                    onClick={() => deleteGroup(group.id)}
+                  >
+                    Eliminar
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {nodes
+                    .filter((n) => n.group === group.id)
+                    .map((n) => (
+                      <span
+                        key={n.id}
+                        className="px-2 py-1 bg-gray-200 rounded text-xs dark:bg-gray-800"
+                      >
+                        {n.name}
+                      </span>
+                    ))}
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center gap-2 pt-2">
+              <Input
+                placeholder="Nueva categoría"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+              />
+              <Button
+                onClick={() => {
+                  if (!newGroupName.trim()) return
+                  const id =
+                    newGroupName
+                      .trim()
+                      .toLowerCase()
+                      .replace(/\s+/g, "-") + Date.now()
+                  setGroups([
+                    ...groups,
+                    { id, name: newGroupName.trim(), color: randomColor() },
+                  ])
+                  setNewGroupName("")
+                }}
+              >
+                Agregar
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
