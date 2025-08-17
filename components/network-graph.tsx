@@ -62,6 +62,7 @@ export default function NetworkGraph() {
   const [isMounted, setIsMounted] = useState(false)
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
+  const [nodePadding, setNodePadding] = useState(35)
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
 
@@ -173,9 +174,12 @@ export default function NetworkGraph() {
           setShowAllGroups(true)
           break
         case "n":
+        case "N":
           if (event.ctrlKey) {
             event.preventDefault()
+            event.stopPropagation()
             setIsGroupDialogOpen(true)
+            setNodePadding((p) => p + 5)
           }
           break
       }
@@ -230,7 +234,7 @@ export default function NetworkGraph() {
       )
       .force("charge", d3.forceManyBody().strength(-300))
       .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius(35))
+      .force("collision", d3.forceCollide().radius(nodePadding))
 
     simulationRef.current = simulation
 
@@ -298,7 +302,7 @@ export default function NetworkGraph() {
         .attr("font-size", 12)
         .attr("font-family", "sans-serif")
         .attr("text-anchor", "middle")
-        .attr("fill", "#fff")
+        .attr("fill", (d) => d.color)
         .attr("pointer-events", "none")
 
     simulation.on("tick", () => {
@@ -364,6 +368,8 @@ export default function NetworkGraph() {
       }
     })
 
+    setTimeout(() => simulation.stop(), 1000)
+
     console.log("[v0] D3 graph initialized successfully")
 
     return () => {
@@ -374,7 +380,7 @@ export default function NetworkGraph() {
         simulationRef.current = null
       }
     }
-  }, [getVisibleNodes, getVisibleLinks, isMounted])
+  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding])
 
   if (!isMounted) {
     return <div className="w-full h-screen bg-gray-50 dark:bg-gray-900" />
