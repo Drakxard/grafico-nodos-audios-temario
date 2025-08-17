@@ -272,20 +272,22 @@ export default function NetworkGraph() {
         return
       }
 
-      // Verify the first element is still a valid DOM node
-      if (!linkNodes[0] || !linkNodes[0].nodeName) {
+      const isValidDomNode = (el: unknown): el is Element =>
+        !!el && typeof (el as Element).nodeName === "string"
+
+      if (!linkNodes.every(isValidDomNode)) {
         console.log("[v0] Invalid link elements detected, stopping simulation")
         simulation.stop()
         return
       }
 
-      if (!nodeNodes[0] || !nodeNodes[0].nodeName) {
+      if (!nodeNodes.every(isValidDomNode)) {
         console.log("[v0] Invalid node elements detected, stopping simulation")
         simulation.stop()
         return
       }
 
-      if (!labelNodes[0] || !labelNodes[0].nodeName) {
+      if (!labelNodes.every(isValidDomNode)) {
         console.log("[v0] Invalid label elements detected, stopping simulation")
         simulation.stop()
         return
