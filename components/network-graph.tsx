@@ -173,8 +173,8 @@ export default function NetworkGraph() {
           event.preventDefault()
           setShowAllGroups(true)
           break
-        case "n":
-        case "N":
+        case "i":
+        case "I":
           if (event.ctrlKey) {
             event.preventDefault()
             event.stopPropagation()
