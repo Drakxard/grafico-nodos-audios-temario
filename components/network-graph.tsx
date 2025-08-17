@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { attachAudioLayer } from "@/lib/audio"
 
 interface Node extends d3.SimulationNodeDatum {
   id: string
@@ -292,6 +293,13 @@ export default function NetworkGraph() {
         }),
     )
 
+    const audioLayer = attachAudioLayer({
+      nodesSelection: nodeElements.nodes(),
+      getExtId: (el) => (el as any).__data__.id,
+      rootElement: svgElement,
+      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+    })
+
     const labelsGroup = container.append("g").attr("class", "labels")
       const labelElements = labelsGroup
         .selectAll("text")
@@ -373,6 +381,7 @@ export default function NetworkGraph() {
     console.log("[v0] D3 graph initialized successfully")
 
     return () => {
+      audioLayer.dispose()
       console.log("[v0] Cleaning up D3 simulation")
       if (simulationRef.current) {
         simulationRef.current.stop()
