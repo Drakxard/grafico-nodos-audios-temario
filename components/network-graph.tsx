@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { attachAudioLayer } from "@/lib/audio"
 
 interface Node extends d3.SimulationNodeDatum {
   id: string
@@ -63,6 +64,8 @@ export default function NetworkGraph() {
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
   const [nodePadding, setNodePadding] = useState(35)
+  const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
+  const [folderReady, setFolderReady] = useState(false)
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
 
@@ -86,6 +89,11 @@ export default function NetworkGraph() {
     if (currentGroup === id) {
       setCurrentGroup(nextGroups[0]?.id || "")
     }
+  }
+
+  const handleFolderClick = async () => {
+    const ok = await audioLayerRef.current?.requestFolderPermission()
+    setFolderReady(!!ok)
   }
 
   useEffect(() => {
@@ -292,6 +300,15 @@ export default function NetworkGraph() {
         }),
     )
 
+    const audioLayer = attachAudioLayer({
+      nodesSelection: nodeElements.nodes(),
+      getExtId: (el) => (el as any).__data__.id,
+      rootElement: svgElement,
+      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+    })
+    audioLayerRef.current = audioLayer
+    setFolderReady(audioLayer.hasFolderAccess())
+
     const labelsGroup = container.append("g").attr("class", "labels")
       const labelElements = labelsGroup
         .selectAll("text")
@@ -373,6 +390,7 @@ export default function NetworkGraph() {
     console.log("[v0] D3 graph initialized successfully")
 
     return () => {
+      audioLayer.dispose()
       console.log("[v0] Cleaning up D3 simulation")
       if (simulationRef.current) {
         simulationRef.current.stop()
@@ -388,6 +406,12 @@ export default function NetworkGraph() {
 
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
+      <Button
+        onClick={handleFolderClick}
+        className="absolute top-2 left-2 z-10"
+      >
+        {folderReady ? "Carpeta lista" : "Configurar carpeta local"}
+      </Button>
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
