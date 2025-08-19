@@ -794,7 +794,7 @@ export default function NetworkGraph() {
           variant="outline"
           onClick={handleBack}
         >
-          ←
+          {"<-"}
         </Button>
       )}
 
