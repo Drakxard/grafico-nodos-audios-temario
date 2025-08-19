@@ -96,6 +96,15 @@ export default function NetworkGraph() {
   const [folderReady, setFolderReady] = useState(false)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
   const subjectMapsRef = useRef<Record<string, SubjectMap[]>>(INITIAL_SUBJECT_MAPS)
+  const subjectGroupsRef = useRef<Record<string, Group[]>>({
+    algebra: [{ id: "algebra", name: "Álgebra", color: "#3b82f6" }],
+    calculo: [{ id: "calculo", name: "Cálculo", color: "#ef4444" }],
+    poo: [{
+      id: "poo",
+      name: "Programación Orientada a Objetos",
+      color: "#10b981",
+    }],
+  })
   const [currentMapIndex, setCurrentMapIndex] = useState<Record<string, number>>({
     algebra: 0,
     calculo: 0,
@@ -117,8 +126,9 @@ export default function NetworkGraph() {
     const map = maps[idx]
     setNodes(map.nodes)
     setLinks(map.links)
-    setGroups([{ id, name: subject.name, color: subject.color }])
-    setCurrentGroup(id)
+    const g = subjectGroupsRef.current[id]
+    setGroups(g)
+    setCurrentGroup(g[0]?.id || "")
     setShowAllGroups(false)
     setIsConfigDialogOpen(false)
   }
@@ -162,6 +172,12 @@ export default function NetworkGraph() {
   useEffect(() => {
     setIsMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (selectedSubject) {
+      subjectGroupsRef.current[selectedSubject] = groups
+    }
+  }, [groups, selectedSubject])
 
   const getVisibleNodes = useCallback(() => {
     if (showAllGroups) {
@@ -215,6 +231,12 @@ export default function NetworkGraph() {
       color: groupData.color,
     }
 
+    if (nodes.length === 0 && svgRef.current) {
+      const { width, height } = svgRef.current.getBoundingClientRect()
+      newNode.x = width / 2
+      newNode.y = height / 2
+    }
+
     const newLinks = nodes.map((n) => ({ source: newNode.id, target: n.id }))
 
     setNodes((prev) => [...prev, newNode])
@@ -251,7 +273,6 @@ export default function NetworkGraph() {
             event.preventDefault()
             event.stopPropagation()
             setIsGroupDialogOpen(true)
-            setNodePadding((p) => p + 5)
           }
           break
       }
