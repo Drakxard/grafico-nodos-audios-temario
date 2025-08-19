@@ -28,20 +28,18 @@ interface Group {
 }
 
 const INITIAL_GROUPS: Group[] = [
-  { id: "technology", name: "Tecnología", color: "#3b82f6" },
-  { id: "business", name: "Negocios", color: "#ef4444" },
-  { id: "science", name: "Ciencia", color: "#10b981" },
-  { id: "arts", name: "Arte", color: "#f59e0b" },
-  { id: "sports", name: "Deportes", color: "#8b5cf6" },
+  { id: "algebra", name: "Álgebra", color: "#3b82f6" },
+  { id: "calculo", name: "Cálculo", color: "#ef4444" },
+  { id: "poo", name: "Programación Orientada a Objetos", color: "#10b981" },
 ]
 
 const INITIAL_NODES: Node[] = [
-  { id: "1", name: "React", group: "technology", color: "#3b82f6" },
-  { id: "2", name: "Node.js", group: "technology", color: "#3b82f6" },
-  { id: "3", name: "Marketing", group: "business", color: "#ef4444" },
-  { id: "4", name: "Ventas", group: "business", color: "#ef4444" },
-  { id: "5", name: "Física", group: "science", color: "#10b981" },
-  { id: "6", name: "Química", group: "science", color: "#10b981" },
+  { id: "1", name: "Matrices", group: "algebra", color: "#3b82f6" },
+  { id: "2", name: "Ecuaciones", group: "algebra", color: "#3b82f6" },
+  { id: "3", name: "Derivadas", group: "calculo", color: "#ef4444" },
+  { id: "4", name: "Integrales", group: "calculo", color: "#ef4444" },
+  { id: "5", name: "Clases", group: "poo", color: "#10b981" },
+  { id: "6", name: "Herencia", group: "poo", color: "#10b981" },
 ]
 
 const INITIAL_LINKS: Link[] = [
@@ -66,6 +64,7 @@ export default function NetworkGraph() {
   const [nodePadding, setNodePadding] = useState(35)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
   const [folderReady, setFolderReady] = useState(false)
+  const [isSubjectDialogOpen, setIsSubjectDialogOpen] = useState(true)
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
 
@@ -406,13 +405,33 @@ export default function NetworkGraph() {
 
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
-      <Button
-        onClick={handleFolderClick}
-        className="absolute top-2 left-2 z-10"
-      >
-        {folderReady ? "Carpeta lista" : "Configurar carpeta local"}
-      </Button>
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
+
+      <Dialog open={isSubjectDialogOpen} onOpenChange={setIsSubjectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Selecciona materia</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button onClick={handleFolderClick} className="w-full">
+              {folderReady ? "Carpeta lista" : "Cargar carpeta local"}
+            </Button>
+            <div className="grid gap-2">
+              {groups.map((group) => (
+                <Button
+                  key={group.id}
+                  onClick={() => {
+                    setCurrentGroup(group.id)
+                    setIsSubjectDialogOpen(false)
+                  }}
+                >
+                  {group.name}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
