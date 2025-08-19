@@ -5,7 +5,6 @@ import * as d3 from "d3"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
 
@@ -90,13 +89,13 @@ export default function NetworkGraph() {
   const [currentGroup, setCurrentGroup] = useState<string>("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newNodeName, setNewNodeName] = useState("")
-  const [newNodeGroup, setNewNodeGroup] = useState("")
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
   const [nodePadding, setNodePadding] = useState(35)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
   const [folderReady, setFolderReady] = useState(false)
   const [_selectedSubject, setSelectedSubject] = useState<string | null>(null)
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(true)
@@ -137,9 +136,12 @@ export default function NetworkGraph() {
     }
   }
 
-  const handleFolderClick = async () => {
-    const ok = await audioLayerRef.current?.requestFolderPermission()
-    setFolderReady(!!ok)
+  const handleFolderClick = () => {
+    folderInputRef.current?.click()
+  }
+
+  const handleFolderChange = () => {
+    setFolderReady(true)
   }
 
   useEffect(() => {
@@ -181,29 +183,28 @@ export default function NetworkGraph() {
   )
 
   const addNode = useCallback(() => {
-    if (!newNodeName.trim() || !newNodeGroup) return
+    if (!newNodeName.trim() || !currentGroup) return
 
-    const groupData = groups.find((g) => g.id === newNodeGroup)
+    const groupData = groups.find((g) => g.id === currentGroup)
     if (!groupData) return
 
     const newNode: Node = {
       id: Date.now().toString(),
       name: newNodeName.trim(),
-      group: newNodeGroup,
+      group: currentGroup,
       color: groupData.color,
     }
 
-    const targetNodes = nodes.filter((n) => n.group === newNodeGroup)
-    const newLinks = targetNodes.map((n) => ({ source: newNode.id, target: n.id }))
+    const groupNodes = nodes.filter((n) => n.group === currentGroup)
+    const lastNode = groupNodes[groupNodes.length - 1]
+    const newLinks = lastNode ? [{ source: lastNode.id, target: newNode.id }] : []
 
     setNodes((prev) => [...prev, newNode])
     setLinks((prev) => [...prev, ...newLinks])
     setNewNodeName("")
-    setNewNodeGroup("")
     setIsDialogOpen(false)
-    setCurrentGroup(newNodeGroup)
     setShowAllGroups(false)
-  }, [newNodeName, newNodeGroup, groups, nodes])
+  }, [newNodeName, currentGroup, groups, nodes])
 
   useEffect(() => {
     if (!isMounted) return
@@ -212,7 +213,7 @@ export default function NetworkGraph() {
       switch (event.key) {
         case "ArrowRight":
           event.preventDefault()
-          navigateToGroup("next")
+          setIsDialogOpen(true)
           break
         case "ArrowLeft":
           event.preventDefault()
@@ -220,7 +221,6 @@ export default function NetworkGraph() {
           break
         case "+":
           event.preventDefault()
-          setNewNodeGroup(currentGroup)
           setIsDialogOpen(true)
           break
         case "Home":
@@ -456,6 +456,16 @@ export default function NetworkGraph() {
 
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
         <DialogContent>
+          <input
+            type="file"
+            ref={folderInputRef}
+            onChange={handleFolderChange}
+            className="hidden"
+            // @ts-ignore
+            webkitdirectory=""
+            // @ts-ignore
+            directory=""
+          />
           <DialogHeader>
             <DialogTitle>Selecciona materia</DialogTitle>
           </DialogHeader>
@@ -493,24 +503,6 @@ export default function NetworkGraph() {
                   }
                 }}
               />
-            </div>
-            <div>
-              <Label htmlFor="nodeGroup">Grupo</Label>
-              <Select value={newNodeGroup} onValueChange={setNewNodeGroup}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un grupo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((group) => (
-                    <SelectItem key={group.id} value={group.id}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: group.color }} />
-                        {group.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             <Button onClick={addNode} className="w-full">
               Agregar Nodo
