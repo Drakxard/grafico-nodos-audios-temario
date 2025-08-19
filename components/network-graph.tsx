@@ -796,7 +796,7 @@ export default function NetworkGraph() {
           variant="outline"
           onClick={handleBack}
         >
-          ←
+          {"<-"}
         </Button>
       )}
 
@@ -878,7 +878,11 @@ export default function NetworkGraph() {
       <Dialog open={isMapDialogOpen} onOpenChange={setIsMapDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Mapas de la materia</DialogTitle>
+            <DialogTitle>
+              {selectedSubject
+                ? `Mapas de ${SUBJECT_DATA[selectedSubject].name}`
+                : "Mapas"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             {selectedWeek &&
