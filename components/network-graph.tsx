@@ -109,6 +109,7 @@ export default function NetworkGraph() {
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
+  const [isMapDialogOpen, setIsMapDialogOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
   const [nodePadding, setNodePadding] = useState(35)
   const [isAwaitingMap, setIsAwaitingMap] = useState(false)
@@ -386,6 +387,24 @@ export default function NetworkGraph() {
     })
   }, [links, getVisibleNodes])
 
+  const goToMapIndex = useCallback(
+    (index: number) => {
+      if (!selectedWeek || !selectedSubject) return
+      const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+      if (index < 0 || index >= maps.length) return
+      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = index
+      setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: index }))
+      const map = maps[index]
+      setNodes(map.nodes)
+      setLinks(map.links)
+      setGroups(map.groups)
+      setCurrentGroup(map.groups[0]?.id || "")
+      setIsAwaitingMap(false)
+      saveCurrentSubjectData()
+    },
+    [selectedWeek, selectedSubject, saveCurrentSubjectData],
+  )
+
   const createNewMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
     const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
@@ -411,32 +430,37 @@ export default function NetworkGraph() {
     if (isAwaitingMap) {
       if (maps.length === 0) return
       const newIndex = maps.length - 1
-      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
-      setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
-      const map = maps[newIndex]
-      setNodes(map.nodes)
-      setLinks(map.links)
-      setGroups(map.groups)
-      setCurrentGroup(map.groups[0]?.id || "")
-      setIsAwaitingMap(false)
+      goToMapIndex(newIndex)
       return
     }
     if (idx <= 0) return
-    const newIndex = idx - 1
-    weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
-    setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
-    const map = maps[newIndex]
-    setNodes(map.nodes)
-    setLinks(map.links)
-    setGroups(map.groups)
-    setCurrentGroup(map.groups[0]?.id || "")
-    saveCurrentSubjectData()
+    goToMapIndex(idx - 1)
   }, [
     selectedWeek,
     selectedSubject,
     currentMapIndex,
     isAwaitingMap,
-    saveCurrentSubjectData,
+    goToMapIndex,
+  ])
+
+  const goToNextMap = useCallback(() => {
+    if (!selectedWeek || !selectedSubject) return
+    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    let idx = currentMapIndex[selectedSubject]
+    if (isAwaitingMap) {
+      if (maps.length === 0) return
+      const newIndex = maps.length - 1
+      goToMapIndex(newIndex)
+      return
+    }
+    if (idx >= maps.length - 1) return
+    goToMapIndex(idx + 1)
+  }, [
+    selectedWeek,
+    selectedSubject,
+    currentMapIndex,
+    isAwaitingMap,
+    goToMapIndex,
   ])
 
   const addNode = useCallback(() => {
@@ -500,7 +524,7 @@ export default function NetworkGraph() {
       switch (event.key) {
         case "ArrowRight":
           event.preventDefault()
-          createNewMap()
+          goToNextMap()
           break
         case "ArrowLeft":
           event.preventDefault()
@@ -519,7 +543,7 @@ export default function NetworkGraph() {
           if (event.ctrlKey) {
             event.preventDefault()
             event.stopPropagation()
-            setIsGroupDialogOpen(true)
+            setIsMapDialogOpen(true)
           }
           break
       }
@@ -527,7 +551,7 @@ export default function NetworkGraph() {
 
     window.addEventListener("keydown", handleKeyPress)
     return () => window.removeEventListener("keydown", handleKeyPress)
-  }, [createNewMap, goToPrevMap, isMounted])
+  }, [goToPrevMap, goToNextMap, isMounted])
 
   useEffect(() => {
     if (!isMounted || !svgRef.current) {
@@ -846,6 +870,41 @@ export default function NetworkGraph() {
             </div>
             <Button onClick={addNode} className="w-full">
               Agregar Nodo
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isMapDialogOpen} onOpenChange={setIsMapDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mapas de la materia</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {selectedWeek &&
+              selectedSubject &&
+              weekSubjectMapsRef.current[selectedWeek][selectedSubject]?.map(
+                (_map, idx) => (
+                  <Button
+                    key={idx}
+                    className="w-full"
+                    onClick={() => {
+                      goToMapIndex(idx)
+                      setIsMapDialogOpen(false)
+                    }}
+                  >
+                    {`Mapa ${idx + 1}`}
+                  </Button>
+                ),
+              )}
+            <Button
+              className="w-full"
+              onClick={() => {
+                createNewMap()
+                setIsMapDialogOpen(false)
+              }}
+            >
+              Nuevo Mapa
             </Button>
           </div>
         </DialogContent>
