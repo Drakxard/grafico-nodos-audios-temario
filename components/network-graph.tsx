@@ -31,6 +31,15 @@ interface Group {
 interface SubjectMap {
   nodes: Node[]
   links: Link[]
+  groups: Group[]
+}
+
+const INITIAL_SUBJECT_GROUPS: Record<string, Group[]> = {
+  algebra: [{ id: "algebra", name: "Álgebra", color: "#3b82f6" }],
+  calculo: [{ id: "calculo", name: "Cálculo", color: "#ef4444" }],
+  poo: [
+    { id: "poo", name: "Programación Orientada a Objetos", color: "#10b981" },
+  ],
 }
 
 const SUBJECT_DATA: Record<string, { name: string; color: string }> = {
@@ -51,6 +60,7 @@ const INITIAL_SUBJECT_MAPS: Record<string, SubjectMap[]> = {
         { source: "a1", target: "a2" },
         { source: "a2", target: "a3" },
       ],
+      groups: JSON.parse(JSON.stringify(INITIAL_SUBJECT_GROUPS.algebra)),
     },
   ],
   calculo: [
@@ -64,6 +74,7 @@ const INITIAL_SUBJECT_MAPS: Record<string, SubjectMap[]> = {
         { source: "c1", target: "c2" },
         { source: "c2", target: "c3" },
       ],
+      groups: JSON.parse(JSON.stringify(INITIAL_SUBJECT_GROUPS.calculo)),
     },
   ],
   poo: [
@@ -77,15 +88,8 @@ const INITIAL_SUBJECT_MAPS: Record<string, SubjectMap[]> = {
         { source: "p1", target: "p2" },
         { source: "p2", target: "p3" },
       ],
+      groups: JSON.parse(JSON.stringify(INITIAL_SUBJECT_GROUPS.poo)),
     },
-  ],
-}
-
-const INITIAL_SUBJECT_GROUPS: Record<string, Group[]> = {
-  algebra: [{ id: "algebra", name: "Álgebra", color: "#3b82f6" }],
-  calculo: [{ id: "calculo", name: "Cálculo", color: "#ef4444" }],
-  poo: [
-    { id: "poo", name: "Programación Orientada a Objetos", color: "#10b981" },
   ],
 }
 
@@ -107,6 +111,7 @@ export default function NetworkGraph() {
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
   const [nodePadding, setNodePadding] = useState(35)
+  const [isAwaitingMap, setIsAwaitingMap] = useState(false)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
   const [folderReady, setFolderReady] = useState(false)
   const [weeks, setWeeks] = useState<{ id: string; name: string }[]>([])
@@ -114,9 +119,6 @@ export default function NetworkGraph() {
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
   const weekSubjectMapsRef = useRef<
     Record<string, Record<string, SubjectMap[]>>
-  >({})
-  const weekSubjectGroupsRef = useRef<
-    Record<string, Record<string, Group[]>>
   >({})
   const weekCurrentMapIndexRef = useRef<
     Record<string, Record<string, number>>
@@ -138,20 +140,27 @@ export default function NetworkGraph() {
     setWeeks(weeksData)
     weeksData.forEach((week: { id: string; name: string }) => {
       weekSubjectMapsRef.current[week.id] = {}
-      weekSubjectGroupsRef.current[week.id] = {}
       weekCurrentMapIndexRef.current[week.id] = {}
       Object.keys(SUBJECT_DATA).forEach((subjectId) => {
-        const maps =
+        const storedMaps =
           localStorage.getItem(`subjectMaps_${week.id}_${subjectId}`) || null
-        weekSubjectMapsRef.current[week.id][subjectId] = maps
-          ? JSON.parse(maps)
+        let maps = storedMaps
+          ? JSON.parse(storedMaps)
           : JSON.parse(JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]))
 
-        const groups =
-          localStorage.getItem(`subjectGroups_${week.id}_${subjectId}`) || null
-        weekSubjectGroupsRef.current[week.id][subjectId] = groups
-          ? JSON.parse(groups)
-          : JSON.parse(JSON.stringify(INITIAL_SUBJECT_GROUPS[subjectId]))
+        if (!maps.some((m: any) => m.groups)) {
+          const storedGroups =
+            localStorage.getItem(`subjectGroups_${week.id}_${subjectId}`) || null
+          const groups = storedGroups
+            ? JSON.parse(storedGroups)
+            : JSON.parse(JSON.stringify(INITIAL_SUBJECT_GROUPS[subjectId]))
+          maps = maps.map((m: any) => ({
+            ...m,
+            groups: JSON.parse(JSON.stringify(groups)),
+          }))
+        }
+
+        weekSubjectMapsRef.current[week.id][subjectId] = maps
 
         const index =
           localStorage.getItem(
@@ -159,7 +168,7 @@ export default function NetworkGraph() {
           ) || null
         weekCurrentMapIndexRef.current[week.id][subjectId] = index
           ? JSON.parse(index)
-          : 0
+          : Math.max(0, maps.length - 1)
       })
     })
   }, [])
@@ -173,27 +182,22 @@ export default function NetworkGraph() {
       return next
     })
     weekSubjectMapsRef.current[newWeek.id] = {}
-    weekSubjectGroupsRef.current[newWeek.id] = {}
     weekCurrentMapIndexRef.current[newWeek.id] = {}
     Object.keys(SUBJECT_DATA).forEach((subjectId) => {
       weekSubjectMapsRef.current[newWeek.id][subjectId] = JSON.parse(
         JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]),
       )
-      weekSubjectGroupsRef.current[newWeek.id][subjectId] = JSON.parse(
-        JSON.stringify(INITIAL_SUBJECT_GROUPS[subjectId]),
-      )
-      weekCurrentMapIndexRef.current[newWeek.id][subjectId] = 0
+      weekCurrentMapIndexRef.current[newWeek.id][subjectId] =
+        weekSubjectMapsRef.current[newWeek.id][subjectId].length - 1
       localStorage.setItem(
         `subjectMaps_${newWeek.id}_${subjectId}`,
         JSON.stringify(weekSubjectMapsRef.current[newWeek.id][subjectId]),
       )
       localStorage.setItem(
-        `subjectGroups_${newWeek.id}_${subjectId}`,
-        JSON.stringify(weekSubjectGroupsRef.current[newWeek.id][subjectId]),
-      )
-      localStorage.setItem(
         `currentMapIndex_${newWeek.id}_${subjectId}`,
-        JSON.stringify(0),
+        JSON.stringify(
+          weekCurrentMapIndexRef.current[newWeek.id][subjectId],
+        ),
       )
     })
   }
@@ -212,12 +216,6 @@ export default function NetworkGraph() {
       ),
     )
     localStorage.setItem(
-      `subjectGroups_${selectedWeek}_${selectedSubject}`,
-      JSON.stringify(
-        weekSubjectGroupsRef.current[selectedWeek][selectedSubject],
-      ),
-    )
-    localStorage.setItem(
       `currentMapIndex_${selectedWeek}_${selectedSubject}`,
       JSON.stringify(
         weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
@@ -231,13 +229,27 @@ export default function NetworkGraph() {
     if (!subject) return
     setSelectedSubject(id)
     const maps = weekSubjectMapsRef.current[selectedWeek][id]
+    if (!maps.length) {
+      const defaultGroups = JSON.parse(
+        JSON.stringify(INITIAL_SUBJECT_GROUPS[id] || []),
+      )
+      weekCurrentMapIndexRef.current[selectedWeek][id] = 0
+      setCurrentMapIndex((prev) => ({ ...prev, [id]: 0 }))
+      setNodes([])
+      setLinks([])
+      setGroups(defaultGroups)
+      setCurrentGroup(defaultGroups[0]?.id || "")
+      setShowAllGroups(false)
+      setIsConfigDialogOpen(false)
+      setIsAwaitingMap(true)
+      return
+    }
     const idx = currentMapIndex[id] ?? maps.length - 1
     const map = maps[idx]
     setNodes(map.nodes)
     setLinks(map.links)
-    const g = weekSubjectGroupsRef.current[selectedWeek][id]
-    setGroups(g)
-    setCurrentGroup(g[0]?.id || "")
+    setGroups(map.groups)
+    setCurrentGroup(map.groups[0]?.id || "")
     setShowAllGroups(false)
     setIsConfigDialogOpen(false)
   }
@@ -307,11 +319,49 @@ export default function NetworkGraph() {
   }, [weeks])
 
   useEffect(() => {
-    if (selectedWeek && selectedSubject) {
-      weekSubjectGroupsRef.current[selectedWeek][selectedSubject] = groups
-      saveCurrentSubjectData()
+    if (
+      !selectedWeek ||
+      !selectedSubject ||
+      isAwaitingMap ||
+      currentMapIndex[selectedSubject] === undefined
+    )
+      return
+    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const idx = currentMapIndex[selectedSubject]
+    if (!maps[idx]) return
+    maps[idx].nodes = nodes
+    maps[idx].links = links
+    maps[idx].groups = groups
+    if (nodes.length === 0) {
+      maps.splice(idx, 1)
+      const newIdx = idx > 0 ? idx - 1 : 0
+      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIdx
+      setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIdx }))
+      if (maps[newIdx]) {
+        setNodes(maps[newIdx].nodes)
+        setLinks(maps[newIdx].links)
+        setGroups(maps[newIdx].groups)
+        setCurrentGroup(maps[newIdx].groups[0]?.id || "")
+      } else {
+        const defaultGroups = JSON.parse(
+          JSON.stringify(INITIAL_SUBJECT_GROUPS[selectedSubject] || []),
+        )
+        setGroups(defaultGroups)
+        setCurrentGroup(defaultGroups[0]?.id || "")
+        setIsAwaitingMap(true)
+      }
     }
-  }, [groups, selectedWeek, selectedSubject, saveCurrentSubjectData])
+    saveCurrentSubjectData()
+  }, [
+    nodes,
+    links,
+    groups,
+    selectedWeek,
+    selectedSubject,
+    currentMapIndex,
+    isAwaitingMap,
+    saveCurrentSubjectData,
+  ])
 
   const getVisibleNodes = useCallback(() => {
     if (showAllGroups) {
@@ -331,31 +381,56 @@ export default function NetworkGraph() {
 
   const createNewMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps =
-      weekSubjectMapsRef.current[selectedWeek][selectedSubject]
-    maps.push({ nodes: [], links: [] })
-    const newIndex = maps.length - 1
+    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const newIndex = maps.length
     weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
     setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
+    const defaultGroups = JSON.parse(
+      JSON.stringify(INITIAL_SUBJECT_GROUPS[selectedSubject] || []),
+    )
     setNodes([])
     setLinks([])
+    setGroups(defaultGroups)
+    setCurrentGroup(defaultGroups[0]?.id || "")
     setNewNodeName("")
-    saveCurrentSubjectData()
-  }, [selectedWeek, selectedSubject, saveCurrentSubjectData])
+    setShowAllGroups(false)
+    setIsAwaitingMap(true)
+  }, [selectedWeek, selectedSubject])
 
   const goToPrevMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const idx = currentMapIndex[selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    let idx = currentMapIndex[selectedSubject]
+    if (isAwaitingMap) {
+      if (maps.length === 0) return
+      const newIndex = maps.length - 1
+      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
+      setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
+      const map = maps[newIndex]
+      setNodes(map.nodes)
+      setLinks(map.links)
+      setGroups(map.groups)
+      setCurrentGroup(map.groups[0]?.id || "")
+      setIsAwaitingMap(false)
+      return
+    }
     if (idx <= 0) return
     const newIndex = idx - 1
     weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
     setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
-    const map =
-      weekSubjectMapsRef.current[selectedWeek][selectedSubject][newIndex]
+    const map = maps[newIndex]
     setNodes(map.nodes)
     setLinks(map.links)
+    setGroups(map.groups)
+    setCurrentGroup(map.groups[0]?.id || "")
     saveCurrentSubjectData()
-  }, [selectedWeek, selectedSubject, currentMapIndex, saveCurrentSubjectData])
+  }, [
+    selectedWeek,
+    selectedSubject,
+    currentMapIndex,
+    isAwaitingMap,
+    saveCurrentSubjectData,
+  ])
 
   const addNode = useCallback(() => {
     if (!newNodeName.trim() || !currentGroup) return
@@ -370,20 +445,46 @@ export default function NetworkGraph() {
       color: groupData.color,
     }
 
-    if (nodes.length === 0 && svgRef.current) {
-      const { width, height } = svgRef.current.getBoundingClientRect()
+    if (nodes.length === 0) {
+      const width = window.innerWidth
+      const height = window.innerHeight
       newNode.x = width / 2
       newNode.y = height / 2
     }
 
     const newLinks = nodes.map((n) => ({ source: newNode.id, target: n.id }))
 
-    setNodes((prev) => [...prev, newNode])
-    setLinks((prev) => [...prev, ...newLinks])
+    const updatedNodes = [...nodes, newNode]
+    const updatedLinks = [...links, ...newLinks]
+    setNodes(updatedNodes)
+    setLinks(updatedLinks)
     setNewNodeName("")
     setIsDialogOpen(false)
     setShowAllGroups(false)
-  }, [newNodeName, currentGroup, groups, nodes])
+
+    if (selectedWeek && selectedSubject && isAwaitingMap) {
+      const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+      maps.push({ nodes: updatedNodes, links: updatedLinks, groups })
+      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] =
+        maps.length - 1
+      setCurrentMapIndex((prev) => ({
+        ...prev,
+        [selectedSubject]: maps.length - 1,
+      }))
+      setIsAwaitingMap(false)
+      saveCurrentSubjectData()
+    }
+  }, [
+    newNodeName,
+    currentGroup,
+    groups,
+    nodes,
+    links,
+    selectedWeek,
+    selectedSubject,
+    isAwaitingMap,
+    saveCurrentSubjectData,
+  ])
 
   useEffect(() => {
     if (!isMounted) return
@@ -649,24 +750,6 @@ export default function NetworkGraph() {
     }
   }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding])
 
-  useEffect(() => {
-    if (!selectedWeek || !selectedSubject) return
-    const idx = currentMapIndex[selectedSubject]
-    weekSubjectMapsRef.current[selectedWeek][selectedSubject][idx] = {
-      nodes,
-      links,
-    }
-    weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = idx
-    saveCurrentSubjectData()
-  }, [
-    nodes,
-    links,
-    currentMapIndex,
-    selectedWeek,
-    selectedSubject,
-    saveCurrentSubjectData,
-  ])
-
   if (!isMounted) {
     return <div className="w-full h-screen bg-gray-50 dark:bg-gray-900" />
   }
@@ -762,7 +845,7 @@ export default function NetworkGraph() {
       <Dialog open={isGroupDialogOpen} onOpenChange={setIsGroupDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Categorías</DialogTitle>
+            <DialogTitle>Temas del mapa</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {groups.map((group) => (
@@ -801,7 +884,7 @@ export default function NetworkGraph() {
             ))}
             <div className="flex items-center gap-2 pt-2">
               <Input
-                placeholder="Nueva categoría"
+                placeholder="Nuevo tema"
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
               />
