@@ -5,7 +5,6 @@ import * as d3 from "d3"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
 
@@ -27,38 +26,67 @@ interface Group {
   color: string
 }
 
-const INITIAL_GROUPS: Group[] = [
-  { id: "technology", name: "Tecnología", color: "#3b82f6" },
-  { id: "business", name: "Negocios", color: "#ef4444" },
-  { id: "science", name: "Ciencia", color: "#10b981" },
-  { id: "arts", name: "Arte", color: "#f59e0b" },
-  { id: "sports", name: "Deportes", color: "#8b5cf6" },
-]
+interface SubjectMap {
+  nodes: Node[]
+  links: Link[]
+}
 
-const INITIAL_NODES: Node[] = [
-  { id: "1", name: "React", group: "technology", color: "#3b82f6" },
-  { id: "2", name: "Node.js", group: "technology", color: "#3b82f6" },
-  { id: "3", name: "Marketing", group: "business", color: "#ef4444" },
-  { id: "4", name: "Ventas", group: "business", color: "#ef4444" },
-  { id: "5", name: "Física", group: "science", color: "#10b981" },
-  { id: "6", name: "Química", group: "science", color: "#10b981" },
-]
+const SUBJECT_DATA: Record<string, { name: string; color: string }> = {
+  algebra: { name: "Álgebra", color: "#3b82f6" },
+  calculo: { name: "Cálculo", color: "#ef4444" },
+  poo: { name: "Programación Orientada a Objetos", color: "#10b981" },
+}
 
-const INITIAL_LINKS: Link[] = [
-  { source: "1", target: "2" },
-  { source: "3", target: "4" },
-  { source: "5", target: "6" },
-]
+const INITIAL_SUBJECT_MAPS: Record<string, SubjectMap[]> = {
+  algebra: [
+    {
+      nodes: [
+        { id: "a1", name: "Álgebra Básica", group: "algebra", color: "#3b82f6" },
+        { id: "a2", name: "Ecuaciones lineales", group: "algebra", color: "#3b82f6" },
+        { id: "a3", name: "Polinomios", group: "algebra", color: "#3b82f6" },
+      ],
+      links: [
+        { source: "a1", target: "a2" },
+        { source: "a2", target: "a3" },
+      ],
+    },
+  ],
+  calculo: [
+    {
+      nodes: [
+        { id: "c1", name: "Límites", group: "calculo", color: "#ef4444" },
+        { id: "c2", name: "Derivadas", group: "calculo", color: "#ef4444" },
+        { id: "c3", name: "Integrales", group: "calculo", color: "#ef4444" },
+      ],
+      links: [
+        { source: "c1", target: "c2" },
+        { source: "c2", target: "c3" },
+      ],
+    },
+  ],
+  poo: [
+    {
+      nodes: [
+        { id: "p1", name: "Clases", group: "poo", color: "#10b981" },
+        { id: "p2", name: "Objetos", group: "poo", color: "#10b981" },
+        { id: "p3", name: "Herencia", group: "poo", color: "#10b981" },
+      ],
+      links: [
+        { source: "p1", target: "p2" },
+        { source: "p2", target: "p3" },
+      ],
+    },
+  ],
+}
 
 export default function NetworkGraph() {
   const svgRef = useRef<SVGSVGElement>(null)
-  const [nodes, setNodes] = useState<Node[]>(INITIAL_NODES)
-  const [links, setLinks] = useState<Link[]>(INITIAL_LINKS)
-  const [groups, setGroups] = useState<Group[]>(INITIAL_GROUPS)
-  const [currentGroup, setCurrentGroup] = useState<string>(INITIAL_GROUPS[0].id)
+  const [nodes, setNodes] = useState<Node[]>([])
+  const [links, setLinks] = useState<Link[]>([])
+  const [groups, setGroups] = useState<Group[]>([])
+  const [currentGroup, setCurrentGroup] = useState<string>("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newNodeName, setNewNodeName] = useState("")
-  const [newNodeGroup, setNewNodeGroup] = useState("")
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
@@ -66,11 +94,34 @@ export default function NetworkGraph() {
   const [nodePadding, setNodePadding] = useState(35)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
   const [folderReady, setFolderReady] = useState(false)
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
+  const subjectMapsRef = useRef<Record<string, SubjectMap[]>>(INITIAL_SUBJECT_MAPS)
+  const [currentMapIndex, setCurrentMapIndex] = useState<Record<string, number>>({
+    algebra: 0,
+    calculo: 0,
+    poo: 0,
+  })
+  const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(true)
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
+
+  const selectSubject = (id: string) => {
+    const subject = SUBJECT_DATA[id]
+    if (!subject) return
+    setSelectedSubject(id)
+    const maps = subjectMapsRef.current[id]
+    const idx = currentMapIndex[id] ?? maps.length - 1
+    const map = maps[idx]
+    setNodes(map.nodes)
+    setLinks(map.links)
+    setGroups([{ id, name: subject.name, color: subject.color }])
+    setCurrentGroup(id)
+    setShowAllGroups(false)
+    setIsConfigDialogOpen(false)
+  }
 
   const deleteGroup = (id: string) => {
     const nextGroups = groups.filter((g) => g.id !== id)
@@ -91,7 +142,19 @@ export default function NetworkGraph() {
     }
   }
 
+  const ensureAudioLayer = () => {
+    if (!audioLayerRef.current && svgRef.current) {
+      audioLayerRef.current = attachAudioLayer({
+        nodesSelection: [],
+        getExtId: () => "",
+        rootElement: svgRef.current,
+        options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      })
+    }
+  }
+
   const handleFolderClick = async () => {
+    ensureAudioLayer()
     const ok = await audioLayerRef.current?.requestFolderPermission()
     setFolderReady(!!ok)
   }
@@ -116,48 +179,50 @@ export default function NetworkGraph() {
     })
   }, [links, getVisibleNodes])
 
-  const navigateToGroup = useCallback(
-    (direction: "next" | "prev") => {
-      const currentIndex = groups.findIndex((g) => g.id === currentGroup)
-      if (currentIndex === -1 || groups.length === 0) return
-      let newIndex
+  const createNewMap = useCallback(() => {
+    if (!selectedSubject) return
+    const maps = subjectMapsRef.current[selectedSubject]
+    maps.push({ nodes: [], links: [] })
+    const newIndex = maps.length - 1
+    setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
+    setNodes([])
+    setLinks([])
+    setNewNodeName("")
+    setIsDialogOpen(true)
+  }, [selectedSubject, subjectMapsRef])
 
-      if (direction === "next") {
-        newIndex = (currentIndex + 1) % groups.length
-      } else {
-        newIndex = currentIndex === 0 ? groups.length - 1 : currentIndex - 1
-      }
-
-      setCurrentGroup(groups[newIndex].id)
-      setShowAllGroups(false)
-    },
-    [currentGroup, groups],
-  )
+  const goToPrevMap = useCallback(() => {
+    if (!selectedSubject) return
+    const idx = currentMapIndex[selectedSubject]
+    if (idx <= 0) return
+    const newIndex = idx - 1
+    setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
+    const map = subjectMapsRef.current[selectedSubject][newIndex]
+    setNodes(map.nodes)
+    setLinks(map.links)
+  }, [selectedSubject, currentMapIndex])
 
   const addNode = useCallback(() => {
-    if (!newNodeName.trim() || !newNodeGroup) return
+    if (!newNodeName.trim() || !currentGroup) return
 
-    const groupData = groups.find((g) => g.id === newNodeGroup)
+    const groupData = groups.find((g) => g.id === currentGroup)
     if (!groupData) return
 
     const newNode: Node = {
       id: Date.now().toString(),
       name: newNodeName.trim(),
-      group: newNodeGroup,
+      group: currentGroup,
       color: groupData.color,
     }
 
-    const targetNodes = nodes.filter((n) => n.group === newNodeGroup)
-    const newLinks = targetNodes.map((n) => ({ source: newNode.id, target: n.id }))
+    const newLinks = nodes.map((n) => ({ source: newNode.id, target: n.id }))
 
     setNodes((prev) => [...prev, newNode])
     setLinks((prev) => [...prev, ...newLinks])
     setNewNodeName("")
-    setNewNodeGroup("")
     setIsDialogOpen(false)
-    setCurrentGroup(newNodeGroup)
     setShowAllGroups(false)
-  }, [newNodeName, newNodeGroup, groups, nodes])
+  }, [newNodeName, currentGroup, groups, nodes])
 
   useEffect(() => {
     if (!isMounted) return
@@ -166,15 +231,14 @@ export default function NetworkGraph() {
       switch (event.key) {
         case "ArrowRight":
           event.preventDefault()
-          navigateToGroup("next")
+          createNewMap()
           break
         case "ArrowLeft":
           event.preventDefault()
-          navigateToGroup("prev")
+          goToPrevMap()
           break
         case "+":
           event.preventDefault()
-          setNewNodeGroup(currentGroup)
           setIsDialogOpen(true)
           break
         case "Home":
@@ -195,7 +259,7 @@ export default function NetworkGraph() {
 
     window.addEventListener("keydown", handleKeyPress)
     return () => window.removeEventListener("keydown", handleKeyPress)
-  }, [navigateToGroup, currentGroup, isMounted])
+  }, [createNewMap, goToPrevMap, isMounted])
 
   useEffect(() => {
     if (!isMounted || !svgRef.current) {
@@ -300,6 +364,7 @@ export default function NetworkGraph() {
         }),
     )
 
+    audioLayerRef.current?.dispose()
     const audioLayer = attachAudioLayer({
       nodesSelection: nodeElements.nodes(),
       getExtId: (el) => (el as any).__data__.id,
@@ -400,19 +465,39 @@ export default function NetworkGraph() {
     }
   }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding])
 
+  useEffect(() => {
+    if (!selectedSubject) return
+    const idx = currentMapIndex[selectedSubject]
+    subjectMapsRef.current[selectedSubject][idx] = { nodes, links }
+  }, [nodes, links, selectedSubject, currentMapIndex])
+
   if (!isMounted) {
     return <div className="w-full h-screen bg-gray-50 dark:bg-gray-900" />
   }
 
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
-      <Button
-        onClick={handleFolderClick}
-        className="absolute top-2 left-2 z-10"
-      >
-        {folderReady ? "Carpeta lista" : "Configurar carpeta local"}
-      </Button>
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
+
+      <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Selecciona materia</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button onClick={handleFolderClick} className="w-full">
+              {folderReady ? "Carpeta lista" : "Cargar carpeta local"}
+            </Button>
+            <div className="grid gap-2">
+              {Object.entries(SUBJECT_DATA).map(([id, data]) => (
+                <Button key={id} variant="outline" onClick={() => selectSubject(id)}>
+                  {data.name}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
@@ -433,24 +518,6 @@ export default function NetworkGraph() {
                   }
                 }}
               />
-            </div>
-            <div>
-              <Label htmlFor="nodeGroup">Grupo</Label>
-              <Select value={newNodeGroup} onValueChange={setNewNodeGroup}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un grupo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((group) => (
-                    <SelectItem key={group.id} value={group.id}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: group.color }} />
-                        {group.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             <Button onClick={addNode} className="w-full">
               Agregar Nodo
