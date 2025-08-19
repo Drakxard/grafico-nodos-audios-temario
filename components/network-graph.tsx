@@ -79,6 +79,19 @@ const INITIAL_SUBJECT_MAPS: Record<string, SubjectMap[]> = {
   ],
 }
 
+const createInitialSubjectMaps = (): Record<string, SubjectMap[]> =>
+  JSON.parse(JSON.stringify(INITIAL_SUBJECT_MAPS))
+
+const createInitialGroups = (): Record<string, Group[]> => ({
+  algebra: [{ id: "algebra", name: "Álgebra", color: "#3b82f6" }],
+  calculo: [{ id: "calculo", name: "Cálculo", color: "#ef4444" }],
+  poo: [{
+    id: "poo",
+    name: "Programación Orientada a Objetos",
+    color: "#10b981",
+  }],
+})
+
 export default function NetworkGraph() {
   const svgRef = useRef<SVGSVGElement>(null)
   const [nodes, setNodes] = useState<Node[]>([])
@@ -95,42 +108,72 @@ export default function NetworkGraph() {
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
   const [folderReady, setFolderReady] = useState(false)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
-  const subjectMapsRef = useRef<Record<string, SubjectMap[]>>(INITIAL_SUBJECT_MAPS)
-  const subjectGroupsRef = useRef<Record<string, Group[]>>({
-    algebra: [{ id: "algebra", name: "Álgebra", color: "#3b82f6" }],
-    calculo: [{ id: "calculo", name: "Cálculo", color: "#ef4444" }],
-    poo: [{
-      id: "poo",
-      name: "Programación Orientada a Objetos",
-      color: "#10b981",
-    }],
-  })
-  const [currentMapIndex, setCurrentMapIndex] = useState<Record<string, number>>({
-    algebra: 0,
-    calculo: 0,
-    poo: 0,
-  })
-  const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(true)
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
+  const [weeks, setWeeks] = useState<number[]>([1, 2])
+  const subjectMapsRef = useRef<Record<number, Record<string, SubjectMap[]>>>(
+    {
+      1: createInitialSubjectMaps(),
+      2: createInitialSubjectMaps(),
+    },
+  )
+  const subjectGroupsRef = useRef<Record<number, Record<string, Group[]>>>(
+    {
+      1: createInitialGroups(),
+      2: createInitialGroups(),
+    },
+  )
+  const [currentMapIndex, setCurrentMapIndex] =
+    useState<Record<number, Record<string, number>>>(
+      {
+        1: { algebra: 0, calculo: 0, poo: 0 },
+        2: { algebra: 0, calculo: 0, poo: 0 },
+      },
+    )
+  const [isWeekDialogOpen, setIsWeekDialogOpen] = useState(true)
+  const [isSubjectDialogOpen, setIsSubjectDialogOpen] = useState(false)
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
 
+  const addWeek = () => {
+    const newWeek = weeks.length + 1
+    setWeeks([...weeks, newWeek])
+    subjectMapsRef.current[newWeek] = createInitialSubjectMaps()
+    subjectGroupsRef.current[newWeek] = createInitialGroups()
+    setCurrentMapIndex((prev) => ({
+      ...prev,
+      [newWeek]: { algebra: 0, calculo: 0, poo: 0 },
+    }))
+  }
+
+  const selectWeek = (week: number) => {
+    setSelectedWeek(week)
+    setSelectedSubject(null)
+    setNodes([])
+    setLinks([])
+    setGroups([])
+    setIsWeekDialogOpen(false)
+    setIsSubjectDialogOpen(true)
+  }
+
   const selectSubject = (id: string) => {
+    if (!selectedWeek) return
     const subject = SUBJECT_DATA[id]
     if (!subject) return
     setSelectedSubject(id)
-    const maps = subjectMapsRef.current[id]
-    const idx = currentMapIndex[id] ?? maps.length - 1
+    const maps = subjectMapsRef.current[selectedWeek][id]
+    const idx =
+      currentMapIndex[selectedWeek][id] ?? maps.length - 1
     const map = maps[idx]
     setNodes(map.nodes)
     setLinks(map.links)
-    const g = subjectGroupsRef.current[id]
+    const g = subjectGroupsRef.current[selectedWeek][id]
     setGroups(g)
     setCurrentGroup(g[0]?.id || "")
     setShowAllGroups(false)
-    setIsConfigDialogOpen(false)
+    setIsSubjectDialogOpen(false)
   }
 
   const deleteGroup = (id: string) => {
@@ -174,10 +217,10 @@ export default function NetworkGraph() {
   }, [])
 
   useEffect(() => {
-    if (selectedSubject) {
-      subjectGroupsRef.current[selectedSubject] = groups
+    if (selectedSubject && selectedWeek) {
+      subjectGroupsRef.current[selectedWeek][selectedSubject] = groups
     }
-  }, [groups, selectedSubject])
+  }, [groups, selectedSubject, selectedWeek])
 
   const getVisibleNodes = useCallback(() => {
     if (showAllGroups) {
@@ -196,27 +239,34 @@ export default function NetworkGraph() {
   }, [links, getVisibleNodes])
 
   const createNewMap = useCallback(() => {
-    if (!selectedSubject) return
-    const maps = subjectMapsRef.current[selectedSubject]
+    if (!selectedSubject || !selectedWeek) return
+    const maps = subjectMapsRef.current[selectedWeek][selectedSubject]
     maps.push({ nodes: [], links: [] })
     const newIndex = maps.length - 1
-    setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
+    setCurrentMapIndex((prev) => ({
+      ...prev,
+      [selectedWeek]: { ...prev[selectedWeek], [selectedSubject]: newIndex },
+    }))
     setNodes([])
     setLinks([])
     setNewNodeName("")
     setIsDialogOpen(true)
-  }, [selectedSubject, subjectMapsRef])
+  }, [selectedSubject, selectedWeek, subjectMapsRef])
 
   const goToPrevMap = useCallback(() => {
-    if (!selectedSubject) return
-    const idx = currentMapIndex[selectedSubject]
+    if (!selectedSubject || !selectedWeek) return
+    const idx = currentMapIndex[selectedWeek][selectedSubject]
     if (idx <= 0) return
     const newIndex = idx - 1
-    setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
-    const map = subjectMapsRef.current[selectedSubject][newIndex]
+    setCurrentMapIndex((prev) => ({
+      ...prev,
+      [selectedWeek]: { ...prev[selectedWeek], [selectedSubject]: newIndex },
+    }))
+    const map =
+      subjectMapsRef.current[selectedWeek][selectedSubject][newIndex]
     setNodes(map.nodes)
     setLinks(map.links)
-  }, [selectedSubject, currentMapIndex])
+  }, [selectedSubject, selectedWeek, currentMapIndex])
 
   const addNode = useCallback(() => {
     if (!newNodeName.trim() || !currentGroup) return
@@ -487,10 +537,13 @@ export default function NetworkGraph() {
   }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding])
 
   useEffect(() => {
-    if (!selectedSubject) return
-    const idx = currentMapIndex[selectedSubject]
-    subjectMapsRef.current[selectedSubject][idx] = { nodes, links }
-  }, [nodes, links, selectedSubject, currentMapIndex])
+    if (!selectedSubject || !selectedWeek) return
+    const idx = currentMapIndex[selectedWeek][selectedSubject]
+    subjectMapsRef.current[selectedWeek][selectedSubject][idx] = {
+      nodes,
+      links,
+    }
+  }, [nodes, links, selectedSubject, selectedWeek, currentMapIndex])
 
   if (!isMounted) {
     return <div className="w-full h-screen bg-gray-50 dark:bg-gray-900" />
@@ -498,24 +551,55 @@ export default function NetworkGraph() {
 
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
+      {selectedSubject && !isSubjectDialogOpen && (
+        <Button
+          className="absolute top-4 left-4 z-10"
+          variant="outline"
+          onClick={() => setIsSubjectDialogOpen(true)}
+        >
+          ←
+        </Button>
+      )}
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
 
-      <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
+      <Dialog open={isWeekDialogOpen} onOpenChange={setIsWeekDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Selecciona materia</DialogTitle>
+            <DialogTitle>Selecciona semana</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <Button onClick={handleFolderClick} className="w-full">
               {folderReady ? "Carpeta lista" : "Cargar carpeta local"}
             </Button>
-            <div className="grid gap-2">
-              {Object.entries(SUBJECT_DATA).map(([id, data]) => (
-                <Button key={id} variant="outline" onClick={() => selectSubject(id)}>
-                  {data.name}
+            <div className="flex flex-col gap-2">
+              {weeks.map((week) => (
+                <Button
+                  key={week}
+                  variant="outline"
+                  onClick={() => selectWeek(week)}
+                >
+                  Semana {week}
                 </Button>
               ))}
+              <Button variant="outline" onClick={addWeek}>
+                +
+              </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isSubjectDialogOpen} onOpenChange={setIsSubjectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Selecciona materia</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-2">
+            {Object.entries(SUBJECT_DATA).map(([id, data]) => (
+              <Button key={id} variant="outline" onClick={() => selectSubject(id)}>
+                {data.name}
+              </Button>
+            ))}
           </div>
         </DialogContent>
       </Dialog>
