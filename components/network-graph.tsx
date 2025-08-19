@@ -148,6 +148,13 @@ export default function NetworkGraph() {
           ? JSON.parse(storedMaps)
           : JSON.parse(JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]))
 
+        // Remove maps that have no nodes
+        maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
+        localStorage.setItem(
+          `subjectMaps_${week.id}_${subjectId}`,
+          JSON.stringify(maps),
+        )
+
         if (!maps.some((m: any) => m.groups)) {
           const storedGroups =
             localStorage.getItem(`subjectGroups_${week.id}_${subjectId}`) || null
@@ -604,6 +611,8 @@ export default function NetworkGraph() {
       .attr("fill", (d) => d.color)
       .attr("stroke", "#fff")
       .attr("stroke-width", 2)
+      .attr("cx", (d) => d.x ?? width / 2)
+      .attr("cy", (d) => d.y ?? height / 2)
       .style("cursor", "pointer")
 
     nodeElements.call(
@@ -678,7 +687,7 @@ export default function NetworkGraph() {
       const nodeNodes = nodeElements.nodes()
       const labelNodes = labelElements.nodes()
 
-      if (!linkNodes.length || !nodeNodes.length || !labelNodes.length) {
+      if (!nodeNodes.length || !labelNodes.length) {
         console.log("[v0] Elements not available during tick, stopping simulation")
         simulation.stop()
         return
@@ -848,12 +857,16 @@ export default function NetworkGraph() {
             <DialogTitle>Temas del mapa</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {groups.map((group) => (
-              <div key={group.id} className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={group.name}
-                    onChange={(e) =>
+            {groups
+              .filter((group) =>
+                nodes.some((n) => n.group === group.id),
+              )
+              .map((group) => (
+                <div key={group.id} className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={group.name}
+                      onChange={(e) =>
                       setGroups((prev) =>
                         prev.map((g) =>
                           g.id === group.id ? { ...g, name: e.target.value } : g,
@@ -881,7 +894,7 @@ export default function NetworkGraph() {
                     ))}
                 </div>
               </div>
-            ))}
+              ))}
             <div className="flex items-center gap-2 pt-2">
               <Input
                 placeholder="Nuevo tema"
