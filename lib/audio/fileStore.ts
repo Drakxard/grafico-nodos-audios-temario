@@ -15,6 +15,11 @@ export class FileStore {
     }
     try {
       this.dirHandle = await (window as any).showDirectoryPicker();
+      const perm = await (this.dirHandle as any).requestPermission?.({ mode: 'readwrite' });
+      if (perm !== 'granted') {
+        this.dirHandle = null;
+        return false;
+      }
       await this.setupDirectory();
       return true;
     } catch {
