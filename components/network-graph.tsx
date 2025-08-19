@@ -28,26 +28,55 @@ interface Group {
 }
 
 const INITIAL_GROUPS: Group[] = [
-  { id: "technology", name: "Tecnología", color: "#3b82f6" },
-  { id: "business", name: "Negocios", color: "#ef4444" },
-  { id: "science", name: "Ciencia", color: "#10b981" },
-  { id: "arts", name: "Arte", color: "#f59e0b" },
-  { id: "sports", name: "Deportes", color: "#8b5cf6" },
+  { id: "algebra", name: "Álgebra", color: "#3b82f6" },
+  { id: "calculo", name: "Cálculo", color: "#ef4444" },
+  {
+    id: "poo",
+    name: "Programación Orientada a Objetos",
+    color: "#10b981",
+  },
+]
+
+const ALGEBRA_NODES: Node[] = [
+  { id: "a1", name: "Vectores", group: "algebra", color: "#3b82f6" },
+  { id: "a2", name: "Matrices", group: "algebra", color: "#3b82f6" },
+  { id: "a3", name: "Determinantes", group: "algebra", color: "#3b82f6" },
+]
+const ALGEBRA_LINKS: Link[] = [
+  { source: "a1", target: "a2" },
+  { source: "a2", target: "a3" },
+]
+
+const CALCULO_NODES: Node[] = [
+  { id: "c1", name: "Límites", group: "calculo", color: "#ef4444" },
+  { id: "c2", name: "Derivadas", group: "calculo", color: "#ef4444" },
+  { id: "c3", name: "Integrales", group: "calculo", color: "#ef4444" },
+]
+const CALCULO_LINKS: Link[] = [
+  { source: "c1", target: "c2" },
+  { source: "c2", target: "c3" },
+]
+
+const POO_NODES: Node[] = [
+  { id: "p1", name: "Clases", group: "poo", color: "#10b981" },
+  { id: "p2", name: "Objetos", group: "poo", color: "#10b981" },
+  { id: "p3", name: "Herencia", group: "poo", color: "#10b981" },
+]
+const POO_LINKS: Link[] = [
+  { source: "p1", target: "p2" },
+  { source: "p2", target: "p3" },
 ]
 
 const INITIAL_NODES: Node[] = [
-  { id: "1", name: "React", group: "technology", color: "#3b82f6" },
-  { id: "2", name: "Node.js", group: "technology", color: "#3b82f6" },
-  { id: "3", name: "Marketing", group: "business", color: "#ef4444" },
-  { id: "4", name: "Ventas", group: "business", color: "#ef4444" },
-  { id: "5", name: "Física", group: "science", color: "#10b981" },
-  { id: "6", name: "Química", group: "science", color: "#10b981" },
+  ...ALGEBRA_NODES,
+  ...CALCULO_NODES,
+  ...POO_NODES,
 ]
 
 const INITIAL_LINKS: Link[] = [
-  { source: "1", target: "2" },
-  { source: "3", target: "4" },
-  { source: "5", target: "6" },
+  ...ALGEBRA_LINKS,
+  ...CALCULO_LINKS,
+  ...POO_LINKS,
 ]
 
 export default function NetworkGraph() {
@@ -66,6 +95,7 @@ export default function NetworkGraph() {
   const [nodePadding, setNodePadding] = useState(35)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
   const [folderReady, setFolderReady] = useState(false)
+  const [isSubjectDialogOpen, setIsSubjectDialogOpen] = useState(false)
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
 
@@ -98,6 +128,7 @@ export default function NetworkGraph() {
 
   useEffect(() => {
     setIsMounted(true)
+    setIsSubjectDialogOpen(true)
   }, [])
 
   const getVisibleNodes = useCallback(() => {
@@ -406,12 +437,34 @@ export default function NetworkGraph() {
 
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
-      <Button
-        onClick={handleFolderClick}
-        className="absolute top-2 left-2 z-10"
-      >
-        {folderReady ? "Carpeta lista" : "Configurar carpeta local"}
-      </Button>
+      <Dialog open={isSubjectDialogOpen} onOpenChange={setIsSubjectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Selecciona una materia</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button onClick={handleFolderClick} className="w-full">
+              {folderReady ? "Carpeta lista" : "Cargar carpeta local"}
+            </Button>
+            {folderReady && (
+              <div className="grid gap-2">
+                {groups.map((group) => (
+                  <Button
+                    key={group.id}
+                    onClick={() => {
+                      setCurrentGroup(group.id)
+                      setIsSubjectDialogOpen(false)
+                    }}
+                  >
+                    {group.name}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
