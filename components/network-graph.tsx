@@ -13,6 +13,8 @@ interface Node extends d3.SimulationNodeDatum {
   name: string
   group: string
   color: string
+  startX?: number
+  startY?: number
 }
 
 interface Link extends d3.SimulationLinkDatum<Node> {
@@ -123,6 +125,8 @@ export default function NetworkGraph() {
     {},
   )
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(true)
+
+  const DELETE_DISTANCE = 150
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
 
@@ -238,6 +242,21 @@ export default function NetworkGraph() {
     setIsConfigDialogOpen(false)
   }
 
+  const handleBack = useCallback(() => {
+    if (selectedSubject) {
+      setSelectedSubject(null)
+      setIsConfigDialogOpen(true)
+    } else if (selectedWeek) {
+      setSelectedWeek(null)
+      setIsConfigDialogOpen(true)
+    } else if (folderReady) {
+      setFolderReady(false)
+      setSelectedWeek(null)
+      setSelectedSubject(null)
+      setIsConfigDialogOpen(true)
+    }
+  }, [selectedSubject, selectedWeek, folderReady])
+
   const deleteGroup = (id: string) => {
     const nextGroups = groups.filter((g) => g.id !== id)
     const remainingNodeIds = new Set(
@@ -321,7 +340,6 @@ export default function NetworkGraph() {
     setNodes([])
     setLinks([])
     setNewNodeName("")
-    setIsDialogOpen(true)
     saveCurrentSubjectData()
   }, [selectedWeek, selectedSubject, saveCurrentSubjectData])
 
@@ -490,19 +508,43 @@ export default function NetworkGraph() {
     nodeElements.call(
       d3
         .drag<SVGCircleElement, Node>()
-        .on("start", (event, d) => {
+        .on("start", function (event, d) {
           if (!event.active && simulation) simulation.alphaTarget(0.3).restart()
           d.fx = d.x
           d.fy = d.y
+          d.startX = d.x
+          d.startY = d.y
         })
-        .on("drag", (event, d) => {
+        .on("drag", function (event, d) {
           d.fx = event.x
           d.fy = event.y
+          const dx = event.x - (d.startX ?? 0)
+          const dy = event.y - (d.startY ?? 0)
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          const progress = Math.min(dist / DELETE_DISTANCE, 1)
+          const newColor = d3.interpolateRgb(d.color, "#ff0000")(progress)
+          d3.select(this).attr("fill", newColor)
         })
-        .on("end", (event, d) => {
+        .on("end", function (event, d) {
           if (!event.active && simulation) simulation.alphaTarget(0)
           d.fx = null
           d.fy = null
+          const dx = (event.x ?? d.x!) - (d.startX ?? 0)
+          const dy = (event.y ?? d.y!) - (d.startY ?? 0)
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          d3.select(this).attr("fill", d.color)
+          if (dist > DELETE_DISTANCE) {
+            setNodes((prev) => prev.filter((n) => n.id !== d.id))
+            setLinks((prev) =>
+              prev.filter((l) => {
+                const sourceId =
+                  typeof l.source === "string" ? l.source : l.source.id
+                const targetId =
+                  typeof l.target === "string" ? l.target : l.target.id
+                return sourceId !== d.id && targetId !== d.id
+              }),
+            )
+          }
         }),
     )
 
@@ -632,14 +674,11 @@ export default function NetworkGraph() {
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
-      {selectedSubject && (
+      {folderReady && (
         <Button
-          className="absolute top-4 left-4 z-10"
+          className="absolute top-4 left-4 z-[60]"
           variant="outline"
-          onClick={() => {
-            setSelectedSubject(null)
-            setIsConfigDialogOpen(true)
-          }}
+          onClick={handleBack}
         >
           ←
         </Button>
