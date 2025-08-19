@@ -79,6 +79,19 @@ const INITIAL_SUBJECT_MAPS: Record<string, SubjectMap[]> = {
   ],
 }
 
+const INITIAL_SUBJECT_GROUPS: Record<string, Group[]> = {
+  algebra: [{ id: "algebra", name: "Álgebra", color: "#3b82f6" }],
+  calculo: [{ id: "calculo", name: "Cálculo", color: "#ef4444" }],
+  poo: [
+    { id: "poo", name: "Programación Orientada a Objetos", color: "#10b981" },
+  ],
+}
+
+const DEFAULT_WEEKS = [
+  { id: "week1", name: "Semana 1" },
+  { id: "week2", name: "Semana 2" },
+]
+
 export default function NetworkGraph() {
   const svgRef = useRef<SVGSVGElement>(null)
   const [nodes, setNodes] = useState<Node[]>([])
@@ -94,39 +107,131 @@ export default function NetworkGraph() {
   const [nodePadding, setNodePadding] = useState(35)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
   const [folderReady, setFolderReady] = useState(false)
+  const [weeks, setWeeks] = useState<{ id: string; name: string }[]>([])
+  const [selectedWeek, setSelectedWeek] = useState<string | null>(null)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
-  const subjectMapsRef = useRef<Record<string, SubjectMap[]>>(INITIAL_SUBJECT_MAPS)
-  const subjectGroupsRef = useRef<Record<string, Group[]>>({
-    algebra: [{ id: "algebra", name: "Álgebra", color: "#3b82f6" }],
-    calculo: [{ id: "calculo", name: "Cálculo", color: "#ef4444" }],
-    poo: [{
-      id: "poo",
-      name: "Programación Orientada a Objetos",
-      color: "#10b981",
-    }],
-  })
-  const [currentMapIndex, setCurrentMapIndex] = useState<Record<string, number>>({
-    algebra: 0,
-    calculo: 0,
-    poo: 0,
-  })
+  const weekSubjectMapsRef = useRef<
+    Record<string, Record<string, SubjectMap[]>>
+  >({})
+  const weekSubjectGroupsRef = useRef<
+    Record<string, Record<string, Group[]>>
+  >({})
+  const weekCurrentMapIndexRef = useRef<
+    Record<string, Record<string, number>>
+  >({})
+  const [currentMapIndex, setCurrentMapIndex] = useState<Record<string, number>>(
+    {},
+  )
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(true)
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
+  const loadPersistedData = useCallback(() => {
+    const storedWeeks = localStorage.getItem("weeks")
+    const weeksData = storedWeeks ? JSON.parse(storedWeeks) : DEFAULT_WEEKS
+    setWeeks(weeksData)
+    weeksData.forEach((week: { id: string; name: string }) => {
+      weekSubjectMapsRef.current[week.id] = {}
+      weekSubjectGroupsRef.current[week.id] = {}
+      weekCurrentMapIndexRef.current[week.id] = {}
+      Object.keys(SUBJECT_DATA).forEach((subjectId) => {
+        const maps =
+          localStorage.getItem(`subjectMaps_${week.id}_${subjectId}`) || null
+        weekSubjectMapsRef.current[week.id][subjectId] = maps
+          ? JSON.parse(maps)
+          : JSON.parse(JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]))
+
+        const groups =
+          localStorage.getItem(`subjectGroups_${week.id}_${subjectId}`) || null
+        weekSubjectGroupsRef.current[week.id][subjectId] = groups
+          ? JSON.parse(groups)
+          : JSON.parse(JSON.stringify(INITIAL_SUBJECT_GROUPS[subjectId]))
+
+        const index =
+          localStorage.getItem(
+            `currentMapIndex_${week.id}_${subjectId}`,
+          ) || null
+        weekCurrentMapIndexRef.current[week.id][subjectId] = index
+          ? JSON.parse(index)
+          : 0
+      })
+    })
+  }, [])
+
+  const addWeek = () => {
+    const newNumber = weeks.length + 1
+    const newWeek = { id: `week${Date.now()}`, name: `Semana ${newNumber}` }
+    setWeeks((prev) => {
+      const next = [...prev, newWeek]
+      localStorage.setItem("weeks", JSON.stringify(next))
+      return next
+    })
+    weekSubjectMapsRef.current[newWeek.id] = {}
+    weekSubjectGroupsRef.current[newWeek.id] = {}
+    weekCurrentMapIndexRef.current[newWeek.id] = {}
+    Object.keys(SUBJECT_DATA).forEach((subjectId) => {
+      weekSubjectMapsRef.current[newWeek.id][subjectId] = JSON.parse(
+        JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]),
+      )
+      weekSubjectGroupsRef.current[newWeek.id][subjectId] = JSON.parse(
+        JSON.stringify(INITIAL_SUBJECT_GROUPS[subjectId]),
+      )
+      weekCurrentMapIndexRef.current[newWeek.id][subjectId] = 0
+      localStorage.setItem(
+        `subjectMaps_${newWeek.id}_${subjectId}`,
+        JSON.stringify(weekSubjectMapsRef.current[newWeek.id][subjectId]),
+      )
+      localStorage.setItem(
+        `subjectGroups_${newWeek.id}_${subjectId}`,
+        JSON.stringify(weekSubjectGroupsRef.current[newWeek.id][subjectId]),
+      )
+      localStorage.setItem(
+        `currentMapIndex_${newWeek.id}_${subjectId}`,
+        JSON.stringify(0),
+      )
+    })
+  }
+
+  const selectWeek = (id: string) => {
+    setSelectedWeek(id)
+    setCurrentMapIndex({ ...weekCurrentMapIndexRef.current[id] })
+  }
+
+  const saveCurrentSubjectData = useCallback(() => {
+    if (!selectedWeek || !selectedSubject) return
+    localStorage.setItem(
+      `subjectMaps_${selectedWeek}_${selectedSubject}`,
+      JSON.stringify(
+        weekSubjectMapsRef.current[selectedWeek][selectedSubject],
+      ),
+    )
+    localStorage.setItem(
+      `subjectGroups_${selectedWeek}_${selectedSubject}`,
+      JSON.stringify(
+        weekSubjectGroupsRef.current[selectedWeek][selectedSubject],
+      ),
+    )
+    localStorage.setItem(
+      `currentMapIndex_${selectedWeek}_${selectedSubject}`,
+      JSON.stringify(
+        weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
+      ),
+    )
+  }, [selectedWeek, selectedSubject])
 
   const selectSubject = (id: string) => {
+    if (!selectedWeek) return
     const subject = SUBJECT_DATA[id]
     if (!subject) return
     setSelectedSubject(id)
-    const maps = subjectMapsRef.current[id]
+    const maps = weekSubjectMapsRef.current[selectedWeek][id]
     const idx = currentMapIndex[id] ?? maps.length - 1
     const map = maps[idx]
     setNodes(map.nodes)
     setLinks(map.links)
-    const g = subjectGroupsRef.current[id]
+    const g = weekSubjectGroupsRef.current[selectedWeek][id]
     setGroups(g)
     setCurrentGroup(g[0]?.id || "")
     setShowAllGroups(false)
@@ -167,6 +272,9 @@ export default function NetworkGraph() {
     ensureAudioLayer()
     const ok = await audioLayerRef.current?.requestFolderPermission()
     setFolderReady(!!ok)
+    if (ok) {
+      loadPersistedData()
+    }
   }
 
   useEffect(() => {
@@ -174,10 +282,17 @@ export default function NetworkGraph() {
   }, [])
 
   useEffect(() => {
-    if (selectedSubject) {
-      subjectGroupsRef.current[selectedSubject] = groups
+    if (weeks.length) {
+      localStorage.setItem("weeks", JSON.stringify(weeks))
     }
-  }, [groups, selectedSubject])
+  }, [weeks])
+
+  useEffect(() => {
+    if (selectedWeek && selectedSubject) {
+      weekSubjectGroupsRef.current[selectedWeek][selectedSubject] = groups
+      saveCurrentSubjectData()
+    }
+  }, [groups, selectedWeek, selectedSubject, saveCurrentSubjectData])
 
   const getVisibleNodes = useCallback(() => {
     if (showAllGroups) {
@@ -196,27 +311,33 @@ export default function NetworkGraph() {
   }, [links, getVisibleNodes])
 
   const createNewMap = useCallback(() => {
-    if (!selectedSubject) return
-    const maps = subjectMapsRef.current[selectedSubject]
+    if (!selectedWeek || !selectedSubject) return
+    const maps =
+      weekSubjectMapsRef.current[selectedWeek][selectedSubject]
     maps.push({ nodes: [], links: [] })
     const newIndex = maps.length - 1
+    weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
     setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
     setNodes([])
     setLinks([])
     setNewNodeName("")
     setIsDialogOpen(true)
-  }, [selectedSubject, subjectMapsRef])
+    saveCurrentSubjectData()
+  }, [selectedWeek, selectedSubject, saveCurrentSubjectData])
 
   const goToPrevMap = useCallback(() => {
-    if (!selectedSubject) return
+    if (!selectedWeek || !selectedSubject) return
     const idx = currentMapIndex[selectedSubject]
     if (idx <= 0) return
     const newIndex = idx - 1
+    weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
     setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
-    const map = subjectMapsRef.current[selectedSubject][newIndex]
+    const map =
+      weekSubjectMapsRef.current[selectedWeek][selectedSubject][newIndex]
     setNodes(map.nodes)
     setLinks(map.links)
-  }, [selectedSubject, currentMapIndex])
+    saveCurrentSubjectData()
+  }, [selectedWeek, selectedSubject, currentMapIndex, saveCurrentSubjectData])
 
   const addNode = useCallback(() => {
     if (!newNodeName.trim() || !currentGroup) return
@@ -487,10 +608,22 @@ export default function NetworkGraph() {
   }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding])
 
   useEffect(() => {
-    if (!selectedSubject) return
+    if (!selectedWeek || !selectedSubject) return
     const idx = currentMapIndex[selectedSubject]
-    subjectMapsRef.current[selectedSubject][idx] = { nodes, links }
-  }, [nodes, links, selectedSubject, currentMapIndex])
+    weekSubjectMapsRef.current[selectedWeek][selectedSubject][idx] = {
+      nodes,
+      links,
+    }
+    weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = idx
+    saveCurrentSubjectData()
+  }, [
+    nodes,
+    links,
+    currentMapIndex,
+    selectedWeek,
+    selectedSubject,
+    saveCurrentSubjectData,
+  ])
 
   if (!isMounted) {
     return <div className="w-full h-screen bg-gray-50 dark:bg-gray-900" />
@@ -499,23 +632,63 @@ export default function NetworkGraph() {
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
+      {selectedSubject && (
+        <Button
+          className="absolute top-4 left-4 z-10"
+          variant="outline"
+          onClick={() => {
+            setSelectedSubject(null)
+            setIsConfigDialogOpen(true)
+          }}
+        >
+          ←
+        </Button>
+      )}
 
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Selecciona materia</DialogTitle>
+            <DialogTitle>
+              {!folderReady
+                ? "Configura carpeta"
+                : !selectedWeek
+                ? "Selecciona semana"
+                : "Selecciona materia"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <Button onClick={handleFolderClick} className="w-full">
               {folderReady ? "Carpeta lista" : "Cargar carpeta local"}
             </Button>
-            <div className="grid gap-2">
-              {Object.entries(SUBJECT_DATA).map(([id, data]) => (
-                <Button key={id} variant="outline" onClick={() => selectSubject(id)}>
-                  {data.name}
+            {folderReady && !selectedWeek && (
+              <div className="grid gap-2">
+                {weeks.map((w) => (
+                  <Button
+                    key={w.id}
+                    variant="outline"
+                    onClick={() => selectWeek(w.id)}
+                  >
+                    {w.name}
+                  </Button>
+                ))}
+                <Button variant="outline" onClick={addWeek}>
+                  +
                 </Button>
-              ))}
-            </div>
+              </div>
+            )}
+            {folderReady && selectedWeek && !selectedSubject && (
+              <div className="grid gap-2">
+                {Object.entries(SUBJECT_DATA).map(([id, data]) => (
+                  <Button
+                    key={id}
+                    variant="outline"
+                    onClick={() => selectSubject(id)}
+                  >
+                    {data.name}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
