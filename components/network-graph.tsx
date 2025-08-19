@@ -160,6 +160,8 @@ export default function NetworkGraph() {
           }))
         }
 
+        maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
+
         weekSubjectMapsRef.current[week.id][subjectId] = maps
 
         const index =
@@ -209,11 +211,13 @@ export default function NetworkGraph() {
 
   const saveCurrentSubjectData = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
+    const maps = weekSubjectMapsRef.current[selectedWeek][
+      selectedSubject
+    ].filter((m) => m.nodes && m.nodes.length > 0)
+    weekSubjectMapsRef.current[selectedWeek][selectedSubject] = maps
     localStorage.setItem(
       `subjectMaps_${selectedWeek}_${selectedSubject}`,
-      JSON.stringify(
-        weekSubjectMapsRef.current[selectedWeek][selectedSubject],
-      ),
+      JSON.stringify(maps),
     )
     localStorage.setItem(
       `currentMapIndex_${selectedWeek}_${selectedSubject}`,
@@ -446,10 +450,17 @@ export default function NetworkGraph() {
     }
 
     if (nodes.length === 0) {
-      const width = window.innerWidth
-      const height = window.innerHeight
-      newNode.x = width / 2
-      newNode.y = height / 2
+      const svg = svgRef.current
+      if (svg) {
+        const rect = svg.getBoundingClientRect()
+        newNode.x = rect.width / 2
+        newNode.y = rect.height / 2
+      } else {
+        const width = window.innerWidth
+        const height = window.innerHeight
+        newNode.x = width / 2
+        newNode.y = height / 2
+      }
     }
 
     const newLinks = nodes.map((n) => ({ source: newNode.id, target: n.id }))
@@ -509,7 +520,7 @@ export default function NetworkGraph() {
           break
         case "i":
         case "I":
-          if (event.ctrlKey) {
+          if (event.ctrlKey && selectedSubject) {
             event.preventDefault()
             event.stopPropagation()
             setIsGroupDialogOpen(true)
@@ -520,7 +531,7 @@ export default function NetworkGraph() {
 
     window.addEventListener("keydown", handleKeyPress)
     return () => window.removeEventListener("keydown", handleKeyPress)
-  }, [createNewMap, goToPrevMap, isMounted])
+  }, [createNewMap, goToPrevMap, isMounted, selectedSubject])
 
   useEffect(() => {
     if (!isMounted || !svgRef.current) {
