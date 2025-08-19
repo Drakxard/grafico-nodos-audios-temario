@@ -108,8 +108,7 @@ export default function NetworkGraph() {
   const [newNodeName, setNewNodeName] = useState("")
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
-  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
-  const [newGroupName, setNewGroupName] = useState("")
+  const [isMapDialogOpen, setIsMapDialogOpen] = useState(false)
   const [nodePadding, setNodePadding] = useState(35)
   const [isAwaitingMap, setIsAwaitingMap] = useState(false)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
@@ -132,8 +131,6 @@ export default function NetworkGraph() {
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
 
-  const randomColor = () =>
-    "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
   const loadPersistedData = useCallback(() => {
     const storedWeeks = localStorage.getItem("weeks")
     const weeksData = storedWeeks ? JSON.parse(storedWeeks) : DEFAULT_WEEKS
@@ -276,25 +273,6 @@ export default function NetworkGraph() {
     }
   }, [selectedSubject, selectedWeek, folderReady])
 
-  const deleteGroup = (id: string) => {
-    const nextGroups = groups.filter((g) => g.id !== id)
-    const remainingNodeIds = new Set(
-      nodes.filter((n) => n.group !== id).map((n) => n.id),
-    )
-    setGroups(nextGroups)
-    setNodes((prev) => prev.filter((n) => n.group !== id))
-    setLinks((prev) =>
-      prev.filter((l) => {
-        const sourceId = typeof l.source === "string" ? l.source : l.source.id
-        const targetId = typeof l.target === "string" ? l.target : l.target.id
-        return remainingNodeIds.has(sourceId) && remainingNodeIds.has(targetId)
-      }),
-    )
-    if (currentGroup === id) {
-      setCurrentGroup(nextGroups[0]?.id || "")
-    }
-  }
-
   const ensureAudioLayer = () => {
     if (!audioLayerRef.current && svgRef.current) {
       audioLayerRef.current = attachAudioLayer({
@@ -404,40 +382,50 @@ export default function NetworkGraph() {
     setIsAwaitingMap(true)
   }, [selectedWeek, selectedSubject])
 
+  const loadMap = useCallback(
+    (index: number) => {
+      if (!selectedWeek || !selectedSubject) return
+      const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+      if (index < 0 || index >= maps.length) return
+      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = index
+      setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: index }))
+      const map = maps[index]
+      setNodes(map.nodes)
+      setLinks(map.links)
+      setGroups(map.groups)
+      setCurrentGroup(map.groups[0]?.id || "")
+      setIsAwaitingMap(false)
+      saveCurrentSubjectData()
+    },
+    [selectedWeek, selectedSubject, saveCurrentSubjectData],
+  )
+
   const goToPrevMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
     const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
     let idx = currentMapIndex[selectedSubject]
     if (isAwaitingMap) {
       if (maps.length === 0) return
-      const newIndex = maps.length - 1
-      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
-      setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
-      const map = maps[newIndex]
-      setNodes(map.nodes)
-      setLinks(map.links)
-      setGroups(map.groups)
-      setCurrentGroup(map.groups[0]?.id || "")
-      setIsAwaitingMap(false)
+      loadMap(maps.length - 1)
       return
     }
     if (idx <= 0) return
-    const newIndex = idx - 1
-    weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
-    setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
-    const map = maps[newIndex]
-    setNodes(map.nodes)
-    setLinks(map.links)
-    setGroups(map.groups)
-    setCurrentGroup(map.groups[0]?.id || "")
-    saveCurrentSubjectData()
+    loadMap(idx - 1)
   }, [
     selectedWeek,
     selectedSubject,
     currentMapIndex,
     isAwaitingMap,
-    saveCurrentSubjectData,
+    loadMap,
   ])
+
+  const goToNextMap = useCallback(() => {
+    if (!selectedWeek || !selectedSubject || isAwaitingMap) return
+    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const idx = currentMapIndex[selectedSubject]
+    if (idx >= maps.length - 1) return
+    loadMap(idx + 1)
+  }, [selectedWeek, selectedSubject, currentMapIndex, isAwaitingMap, loadMap])
 
   const addNode = useCallback(() => {
     if (!newNodeName.trim() || !currentGroup) return
@@ -500,7 +488,7 @@ export default function NetworkGraph() {
       switch (event.key) {
         case "ArrowRight":
           event.preventDefault()
-          createNewMap()
+          goToNextMap()
           break
         case "ArrowLeft":
           event.preventDefault()
@@ -519,7 +507,7 @@ export default function NetworkGraph() {
           if (event.ctrlKey) {
             event.preventDefault()
             event.stopPropagation()
-            setIsGroupDialogOpen(true)
+            setIsMapDialogOpen(true)
           }
           break
       }
@@ -527,7 +515,7 @@ export default function NetworkGraph() {
 
     window.addEventListener("keydown", handleKeyPress)
     return () => window.removeEventListener("keydown", handleKeyPress)
-  }, [createNewMap, goToPrevMap, isMounted])
+  }, [goToNextMap, goToPrevMap, isMounted])
 
   useEffect(() => {
     if (!isMounted || !svgRef.current) {
@@ -851,74 +839,38 @@ export default function NetworkGraph() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isGroupDialogOpen} onOpenChange={setIsGroupDialogOpen}>
+      <Dialog open={isMapDialogOpen} onOpenChange={setIsMapDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Temas del mapa</DialogTitle>
+            <DialogTitle>Mapas de la materia</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            {groups
-              .filter((group) =>
-                nodes.some((n) => n.group === group.id),
-              )
-              .map((group) => (
-                <div key={group.id} className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={group.name}
-                      onChange={(e) =>
-                      setGroups((prev) =>
-                        prev.map((g) =>
-                          g.id === group.id ? { ...g, name: e.target.value } : g,
-                        ),
-                      )
-                    }
-                  />
+          <div className="space-y-2">
+            {selectedWeek && selectedSubject &&
+              weekSubjectMapsRef.current[selectedWeek][selectedSubject].map(
+                (map, index) => (
                   <Button
-                    variant="destructive"
-                    onClick={() => deleteGroup(group.id)}
+                    key={index}
+                    onClick={() => {
+                      loadMap(index)
+                      setIsMapDialogOpen(false)
+                    }}
+                    className="w-full justify-start"
                   >
-                    Eliminar
+                    {`Mapa ${index + 1}: ${map.groups
+                      .map((g) => g.name)
+                      .join(", ")}`}
                   </Button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {nodes
-                    .filter((n) => n.group === group.id)
-                    .map((n) => (
-                      <span
-                        key={n.id}
-                        className="px-2 py-1 bg-gray-200 rounded text-xs dark:bg-gray-800"
-                      >
-                        {n.name}
-                      </span>
-                    ))}
-                </div>
-              </div>
-              ))}
-            <div className="flex items-center gap-2 pt-2">
-              <Input
-                placeholder="Nuevo tema"
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-              />
-              <Button
-                onClick={() => {
-                  if (!newGroupName.trim()) return
-                  const id =
-                    newGroupName
-                      .trim()
-                      .toLowerCase()
-                      .replace(/\s+/g, "-") + Date.now()
-                  setGroups([
-                    ...groups,
-                    { id, name: newGroupName.trim(), color: randomColor() },
-                  ])
-                  setNewGroupName("")
-                }}
-              >
-                Agregar
-              </Button>
-            </div>
+                ),
+              )}
+            <Button
+              onClick={() => {
+                setIsMapDialogOpen(false)
+                createNewMap()
+              }}
+              className="w-full"
+            >
+              Nuevo mapa
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
