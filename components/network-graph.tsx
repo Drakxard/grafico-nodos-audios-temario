@@ -148,6 +148,19 @@ export default function NetworkGraph() {
         let maps = storedMaps
           ? JSON.parse(storedMaps)
           : JSON.parse(JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]))
+        maps = maps.map((m: any) => ({
+          nodes: (m.nodes || []).map((n: any) => ({
+            id: n.id,
+            name: n.name,
+            group: n.group,
+            color: n.color,
+          })),
+          links: (m.links || []).map((l: any) => ({
+            source: typeof l.source === "string" ? l.source : l.source.id,
+            target: typeof l.target === "string" ? l.target : l.target.id,
+          })),
+          groups: m.groups,
+        }))
 
         // Remove maps that have no nodes
         maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
@@ -217,11 +230,24 @@ export default function NetworkGraph() {
 
   const saveCurrentSubjectData = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
+    const serializedMaps = weekSubjectMapsRef.current[selectedWeek][
+      selectedSubject
+    ].map((m) => ({
+      nodes: m.nodes.map(({ id, name, group, color }) => ({
+        id,
+        name,
+        group,
+        color,
+      })),
+      links: m.links.map((l) => ({
+        source: typeof l.source === "string" ? l.source : l.source.id,
+        target: typeof l.target === "string" ? l.target : l.target.id,
+      })),
+      groups: m.groups,
+    }))
     localStorage.setItem(
       `subjectMaps_${selectedWeek}_${selectedSubject}`,
-      JSON.stringify(
-        weekSubjectMapsRef.current[selectedWeek][selectedSubject],
-      ),
+      JSON.stringify(serializedMaps),
     )
     localStorage.setItem(
       `currentMapIndex_${selectedWeek}_${selectedSubject}`,
@@ -335,8 +361,16 @@ export default function NetworkGraph() {
     const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
     const idx = currentMapIndex[selectedSubject]
     if (!maps[idx]) return
-    maps[idx].nodes = nodes
-    maps[idx].links = links
+    maps[idx].nodes = nodes.map(({ id, name, group, color }) => ({
+      id,
+      name,
+      group,
+      color,
+    }))
+    maps[idx].links = links.map((l) => ({
+      source: typeof l.source === "string" ? l.source : l.source.id,
+      target: typeof l.target === "string" ? l.target : l.target.id,
+    }))
     maps[idx].groups = groups
     if (nodes.length === 0) {
       maps.splice(idx, 1)
@@ -529,6 +563,10 @@ export default function NetworkGraph() {
           goToPrevMap()
           break
         case "+":
+          if (event.ctrlKey || event.metaKey) {
+            // Allow browser zoom shortcuts like Ctrl+
+            return
+          }
           event.preventDefault()
           setIsDialogOpen(true)
           break
@@ -800,7 +838,12 @@ export default function NetworkGraph() {
 
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
         <DialogContent>
-          <DialogHeader>
+          <DialogHeader className="flex items-center gap-2">
+            {(folderReady || selectedWeek || selectedSubject) && (
+              <Button variant="outline" onClick={handleBack} className="px-2">
+                ←
+              </Button>
+            )}
             <DialogTitle>
               {!folderReady
                 ? "Configura carpeta"
