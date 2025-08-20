@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { ArrowLeft } from "lucide-react"
 import { attachAudioLayer } from "@/lib/audio"
 
 interface Node extends d3.SimulationNodeDatum {
@@ -831,19 +832,15 @@ export default function NetworkGraph() {
           className="absolute top-4 left-4 z-[60]"
           variant="outline"
           onClick={handleBack}
+          size="icon"
         >
-          ←
+          <ArrowLeft className="h-4 w-4" />
         </Button>
       )}
 
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
         <DialogContent>
           <DialogHeader className="flex items-center gap-2">
-            {(folderReady || selectedWeek || selectedSubject) && (
-              <Button variant="outline" onClick={handleBack} className="px-2">
-                ←
-              </Button>
-            )}
             <DialogTitle>
               {!folderReady
                 ? "Configura carpeta"
