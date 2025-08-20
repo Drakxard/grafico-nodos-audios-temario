@@ -828,7 +828,7 @@ export default function NetworkGraph() {
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
       {(folderReady || selectedWeek || selectedSubject) && (
         <Button
-          className="absolute top-4 left-4 z-[60]"
+          className="fixed top-4 left-4 z-[60]"
           variant="outline"
           onClick={handleBack}
         >
@@ -838,12 +838,7 @@ export default function NetworkGraph() {
 
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
         <DialogContent>
-          <DialogHeader className="flex items-center gap-2">
-            {(folderReady || selectedWeek || selectedSubject) && (
-              <Button variant="outline" onClick={handleBack} className="px-2">
-                ←
-              </Button>
-            )}
+          <DialogHeader>
             <DialogTitle>
               {!folderReady
                 ? "Configura carpeta"
