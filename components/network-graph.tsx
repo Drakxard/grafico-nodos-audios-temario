@@ -151,12 +151,26 @@ export default function NetworkGraph() {
 
         // Remove maps that have no nodes
         maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
-        localStorage.setItem(
-          `subjectMaps_${week.id}_${subjectId}`,
-          JSON.stringify(maps),
-        )
 
-        if (!maps.some((m: any) => m.groups)) {
+        maps = maps.map((m: any) => ({
+          nodes: (m.nodes || []).map((n: any) => ({
+            id: n.id,
+            name: n.name,
+            group: n.group,
+            color: n.color,
+            startX: n.startX ?? n.x,
+            startY: n.startY ?? n.y,
+          })),
+          links: (m.links || []).map((l: any) => ({
+            source:
+              typeof l.source === "string" ? l.source : l.source.id,
+            target:
+              typeof l.target === "string" ? l.target : l.target.id,
+          })),
+          groups: m.groups || [],
+        }))
+
+        if (!maps.some((m: any) => m.groups && m.groups.length)) {
           const storedGroups =
             localStorage.getItem(`subjectGroups_${week.id}_${subjectId}`) || null
           const groups = storedGroups
@@ -167,6 +181,11 @@ export default function NetworkGraph() {
             groups: JSON.parse(JSON.stringify(groups)),
           }))
         }
+
+        localStorage.setItem(
+          `subjectMaps_${week.id}_${subjectId}`,
+          JSON.stringify(maps),
+        )
 
         weekSubjectMapsRef.current[week.id][subjectId] = maps
 
@@ -254,8 +273,14 @@ export default function NetworkGraph() {
     }
     const idx = currentMapIndex[id] ?? maps.length - 1
     const map = maps[idx]
-    setNodes(map.nodes)
-    setLinks(map.links)
+    const loadedNodes = map.nodes.map((n: any) => ({
+      ...n,
+      x: n.startX,
+      y: n.startY,
+    }))
+    const loadedLinks = map.links.map((l: any) => ({ ...l }))
+    setNodes(loadedNodes)
+    setLinks(loadedLinks)
     setGroups(map.groups)
     setCurrentGroup(map.groups[0]?.id || "")
     setShowAllGroups(false)
@@ -335,8 +360,20 @@ export default function NetworkGraph() {
     const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
     const idx = currentMapIndex[selectedSubject]
     if (!maps[idx]) return
-    maps[idx].nodes = nodes
-    maps[idx].links = links
+    const sanitizedNodes = nodes.map((n) => ({
+      id: n.id,
+      name: n.name,
+      group: n.group,
+      color: n.color,
+      startX: n.x ?? n.startX,
+      startY: n.y ?? n.startY,
+    }))
+    const sanitizedLinks = links.map((l) => ({
+      source: typeof l.source === "string" ? l.source : (l.source as Node).id,
+      target: typeof l.target === "string" ? l.target : (l.target as Node).id,
+    }))
+    maps[idx].nodes = sanitizedNodes
+    maps[idx].links = sanitizedLinks
     maps[idx].groups = groups
     if (nodes.length === 0) {
       maps.splice(idx, 1)
@@ -344,10 +381,17 @@ export default function NetworkGraph() {
       weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIdx
       setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIdx }))
       if (maps[newIdx]) {
-        setNodes(maps[newIdx].nodes)
-        setLinks(maps[newIdx].links)
-        setGroups(maps[newIdx].groups)
-        setCurrentGroup(maps[newIdx].groups[0]?.id || "")
+        const nextMap = maps[newIdx]
+        const loadedNodes = nextMap.nodes.map((n: any) => ({
+          ...n,
+          x: n.startX,
+          y: n.startY,
+        }))
+        const loadedLinks = nextMap.links.map((l: any) => ({ ...l }))
+        setNodes(loadedNodes)
+        setLinks(loadedLinks)
+        setGroups(nextMap.groups)
+        setCurrentGroup(nextMap.groups[0]?.id || "")
       } else {
         const defaultGroups = JSON.parse(
           JSON.stringify(INITIAL_SUBJECT_GROUPS[selectedSubject] || []),
@@ -393,8 +437,14 @@ export default function NetworkGraph() {
       weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = index
       setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: index }))
       const map = maps[index]
-      setNodes(map.nodes)
-      setLinks(map.links)
+      const loadedNodes = map.nodes.map((n: any) => ({
+        ...n,
+        x: n.startX,
+        y: n.startY,
+      }))
+      const loadedLinks = map.links.map((l: any) => ({ ...l }))
+      setNodes(loadedNodes)
+      setLinks(loadedLinks)
       setGroups(map.groups)
       setCurrentGroup(map.groups[0]?.id || "")
       setIsAwaitingMap(false)
@@ -481,6 +531,9 @@ export default function NetworkGraph() {
       newNode.y = height / 2
     }
 
+    newNode.startX = newNode.x
+    newNode.startY = newNode.y
+
     const newLinks = nodes.map((n) => ({ source: newNode.id, target: n.id }))
 
     const updatedNodes = [...nodes, newNode]
@@ -493,7 +546,23 @@ export default function NetworkGraph() {
 
     if (selectedWeek && selectedSubject && isAwaitingMap) {
       const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
-      maps.push({ nodes: updatedNodes, links: updatedLinks, groups })
+      maps.push({
+        nodes: updatedNodes.map((n) => ({
+          id: n.id,
+          name: n.name,
+          group: n.group,
+          color: n.color,
+          startX: n.x ?? n.startX,
+          startY: n.y ?? n.startY,
+        })),
+        links: updatedLinks.map((l) => ({
+          source:
+            typeof l.source === "string" ? l.source : (l.source as Node).id,
+          target:
+            typeof l.target === "string" ? l.target : (l.target as Node).id,
+        })),
+        groups,
+      })
       weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] =
         maps.length - 1
       setCurrentMapIndex((prev) => ({
@@ -529,6 +598,8 @@ export default function NetworkGraph() {
           goToPrevMap()
           break
         case "+":
+        case "=":
+          if (event.ctrlKey || event.metaKey) break
           event.preventDefault()
           setIsDialogOpen(true)
           break
@@ -573,8 +644,11 @@ export default function NetworkGraph() {
         return
       }
 
-      const nodesCopy = visibleNodes
-      const linksCopy = visibleLinks
+      const nodesCopy = visibleNodes.map((n) => ({ ...n }))
+      const linksCopy = visibleLinks.map((l) => ({
+        source: typeof l.source === "string" ? l.source : (l.source as Node).id,
+        target: typeof l.target === "string" ? l.target : (l.target as Node).id,
+      }))
 
     if (simulationRef.current) {
       simulationRef.current.stop()
@@ -790,7 +864,7 @@ export default function NetworkGraph() {
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
       {folderReady && (
         <Button
-          className="absolute top-4 left-4 z-[60]"
+          className="absolute top-4 left-4 z-[100]"
           variant="outline"
           onClick={handleBack}
         >
@@ -801,13 +875,20 @@ export default function NetworkGraph() {
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {!folderReady
-                ? "Configura carpeta"
-                : !selectedWeek
-                ? "Selecciona semana"
-                : "Selecciona materia"}
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle>
+                {!folderReady
+                  ? "Configura carpeta"
+                  : !selectedWeek
+                  ? "Selecciona semana"
+                  : "Selecciona materia"}
+              </DialogTitle>
+              {folderReady && (
+                <Button variant="ghost" onClick={handleBack}>
+                  ←
+                </Button>
+              )}
+            </div>
           </DialogHeader>
           <div className="space-y-4">
             <Button onClick={handleFolderClick} className="w-full">
