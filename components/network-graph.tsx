@@ -826,7 +826,7 @@ export default function NetworkGraph() {
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
-      {folderReady && (
+      {(folderReady || selectedWeek || selectedSubject) && (
         <Button
           className="absolute top-4 left-4 z-[60]"
           variant="outline"
