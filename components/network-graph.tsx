@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { ArrowLeft } from "lucide-react"
 import { attachAudioLayer } from "@/lib/audio"
 
 interface Node extends d3.SimulationNodeDatum {
@@ -828,11 +829,13 @@ export default function NetworkGraph() {
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
       {folderReady && (
         <Button
+          aria-label="Volver"
           className="absolute top-4 left-4 z-[60]"
           variant="outline"
+          size="icon"
           onClick={handleBack}
         >
-          ←
+          <ArrowLeft className="h-4 w-4" />
         </Button>
       )}
 
