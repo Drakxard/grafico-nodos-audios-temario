@@ -288,7 +288,7 @@ export default function NetworkGraph() {
     setIsConfigDialogOpen(false)
   }
 
-  const handleBack = useCallback(() => {
+  const handleConfigBack = useCallback(() => {
     if (selectedSubject) {
       setSelectedSubject(null)
     } else if (selectedWeek) {
@@ -300,6 +300,11 @@ export default function NetworkGraph() {
     }
     setIsConfigDialogOpen(true)
   }, [selectedSubject, selectedWeek, folderReady])
+
+  const handleGeneralBack = useCallback(() => {
+    setSelectedSubject(null)
+    setIsConfigDialogOpen(true)
+  }, [])
 
   const deleteGroup = (id: string) => {
     const nextGroups = groups.filter((g) => g.id !== id)
@@ -826,11 +831,11 @@ export default function NetworkGraph() {
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
-      {(folderReady || selectedWeek || selectedSubject) && (
+      {selectedSubject && (
         <Button
           className="absolute top-4 left-4 z-[60]"
           variant="outline"
-          onClick={handleBack}
+          onClick={handleGeneralBack}
         >
           ←
         </Button>
@@ -840,7 +845,11 @@ export default function NetworkGraph() {
         <DialogContent>
           <DialogHeader className="flex items-center gap-2">
             {(folderReady || selectedWeek || selectedSubject) && (
-              <Button variant="outline" onClick={handleBack} className="px-2">
+              <Button
+                variant="outline"
+                onClick={handleConfigBack}
+                className="px-2"
+              >
                 ←
               </Button>
             )}
