@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
+import { useTheme } from "next-themes"
 
 interface Node extends d3.SimulationNodeDatum {
   id: string
@@ -38,6 +39,7 @@ interface PersistedConfig {
   weeks: { id: string; name: string }[]
   weekSubjectMaps: Record<string, Record<string, SubjectMap[]>>
   weekCurrentMapIndex: Record<string, Record<string, number>>
+  theme: string
 }
 
 const INITIAL_SUBJECT_GROUPS: Record<string, Group[]> = {
@@ -116,7 +118,7 @@ const createDefaultConfig = (): PersistedConfig => {
       weekCurrentMapIndex[week.id][subjectId] = maps.length - 1
     })
   })
-  return { weeks: DEFAULT_WEEKS, weekSubjectMaps, weekCurrentMapIndex }
+  return { weeks: DEFAULT_WEEKS, weekSubjectMaps, weekCurrentMapIndex, theme: 'light' }
 }
 
 export default function NetworkGraph() {
@@ -150,6 +152,15 @@ export default function NetworkGraph() {
     {},
   )
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(true)
+  const { theme, setTheme } = useTheme()
+  const [showThemePicker, setShowThemePicker] = useState(false)
+  const themeOptions = [
+    { id: 'light', color: '#f8fafc' },
+    { id: 'dark', color: '#0f172a' },
+    { id: 'blue', color: '#1e3a8a' },
+    { id: 'emerald', color: '#064e3b' },
+    { id: 'rose', color: '#881337' },
+  ]
 
   const DELETE_DISTANCE = 150
 
@@ -163,9 +174,10 @@ export default function NetworkGraph() {
       weeks,
       weekSubjectMaps: weekSubjectMapsRef.current,
       weekCurrentMapIndex: weekCurrentMapIndexRef.current,
+      theme: theme || 'light',
     }
     await audioLayerRef.current.writeConfig(cfg)
-  }, [weeks])
+  }, [weeks, theme])
   const loadPersistedData = useCallback(async () => {
     if (audioLayerRef.current?.hasFolderAccess()) {
       const cfg = await audioLayerRef.current.readConfig<PersistedConfig>()
@@ -173,18 +185,22 @@ export default function NetworkGraph() {
         setWeeks(cfg.weeks)
         weekSubjectMapsRef.current = cfg.weekSubjectMaps || {}
         weekCurrentMapIndexRef.current = cfg.weekCurrentMapIndex || {}
+        if (cfg.theme) setTheme(cfg.theme)
       } else {
         const def = createDefaultConfig()
         setWeeks(def.weeks)
         weekSubjectMapsRef.current = def.weekSubjectMaps
         weekCurrentMapIndexRef.current = def.weekCurrentMapIndex
         await audioLayerRef.current.writeConfig(def)
+        setTheme(def.theme)
       }
       return
     }
     const storedWeeks = localStorage.getItem("weeks")
     const weeksData = storedWeeks ? JSON.parse(storedWeeks) : DEFAULT_WEEKS
     setWeeks(weeksData)
+    const storedTheme = localStorage.getItem('theme') || 'light'
+    setTheme(storedTheme)
     weeksData.forEach((week: { id: string; name: string }) => {
       weekSubjectMapsRef.current[week.id] = {}
       weekCurrentMapIndexRef.current[week.id] = {}
@@ -406,6 +422,14 @@ export default function NetworkGraph() {
       persistConfig()
     }
   }, [weeks, persistConfig])
+
+  useEffect(() => {
+    if (!theme) return
+    localStorage.setItem('theme', theme)
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      persistConfig()
+    }
+  }, [theme, persistConfig])
 
   useEffect(() => {
     if (
@@ -880,12 +904,12 @@ export default function NetworkGraph() {
   }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding, loadPersistedData])
 
   if (!isMounted) {
-    return <div className="w-full h-screen bg-gray-50 dark:bg-gray-900" />
+    return <div className="w-full h-screen bg-background" />
   }
 
   return (
-    <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
-      <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
+    <div className="w-full h-screen bg-background text-foreground relative overflow-hidden">
+      <svg ref={svgRef} width="100%" height="100%" className="bg-background" />
       {step > 0 && (
         <Button
           className="absolute top-4 left-4 z-[60]"
@@ -894,6 +918,30 @@ export default function NetworkGraph() {
         >
           ←
         </Button>
+      )}
+      {folderReady && (
+        <div className="absolute top-4 right-4 z-[60]">
+          <button
+            className="w-8 h-8 rounded-full border"
+            style={{ backgroundColor: themeOptions.find(t => t.id === theme)?.color }}
+            onClick={() => setShowThemePicker(p => !p)}
+          />
+          {showThemePicker && (
+            <div className="absolute mt-2 right-0 flex flex-col gap-2">
+              {themeOptions.filter(t => t.id !== theme).map(t => (
+                <button
+                  key={t.id}
+                  className="w-8 h-8 rounded-full border"
+                  style={{ backgroundColor: t.color }}
+                  onClick={() => {
+                    setTheme(t.id)
+                    setShowThemePicker(false)
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
