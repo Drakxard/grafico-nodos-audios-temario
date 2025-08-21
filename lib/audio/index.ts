@@ -90,6 +90,26 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
     updateState(extId, 'idle');
   };
 
+  const upload = async (extId: string, blob: Blob) => {
+    try {
+      await store.writeAudio(extId, blob);
+      const duration = await getDuration(blob);
+      const now = new Date().toISOString();
+      metadata.nodes[extId] = {
+        extId,
+        local_path: `audios/${extId}.webm`,
+        duration_seconds: duration,
+        mime: blob.type,
+        created_at: now,
+        last_modified: now,
+      };
+      await saveMetadata();
+      updateState(extId, 'has-audio');
+    } catch (e) {
+      options?.onError?.('E_WRITE_FAIL', e);
+    }
+  };
+
   const download = async (extId: string) => {
     const blob = await store.readAudio(extId);
     if (!blob) return;
@@ -123,7 +143,9 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
     );
   };
 
-  for (const el of nodesSelection) bind(el);
+  if (options?.bindGestures !== false) {
+    for (const el of nodesSelection) bind(el);
+  }
   store.init().then(loadMetadata);
 
   return {
@@ -139,6 +161,7 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
     pause,
     delete: del,
     download,
+    upload,
     dispose: () => {
       state.clear();
     },

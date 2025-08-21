@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
+import type { NodeState } from "@/lib/audio/types"
 
 interface Node extends d3.SimulationNodeDatum {
   id: string
@@ -119,6 +120,8 @@ export default function NetworkGraph() {
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
   const [step, setStep] = useState(0)
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
+  const [nodeAudioStates, setNodeAudioStates] = useState<Record<string, NodeState>>({})
   const weekSubjectMapsRef = useRef<
     Record<string, Record<string, SubjectMap[]>>
   >({})
@@ -335,7 +338,13 @@ export default function NetworkGraph() {
         nodesSelection: [],
         getExtId: () => "",
         rootElement: svgRef.current,
-        options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+        options: {
+          allowLocalFileSystem: true,
+          autoSaveMetadata: true,
+          bindGestures: false,
+          onStateChange: (id, st) =>
+            setNodeAudioStates((prev) => ({ ...prev, [id]: st })),
+        },
       })
     }
   }
@@ -685,10 +694,11 @@ export default function NetworkGraph() {
       .attr("cy", (d) => d.y ?? height / 2)
       .style("cursor", "pointer")
 
-    nodeElements.call(
-      d3
-        .drag<SVGCircleElement, Node>()
-        .on("start", function (event, d) {
+    nodeElements
+      .call(
+        d3
+          .drag<SVGCircleElement, Node>()
+          .on("start", function (event, d) {
           if (!event.active && simulation) simulation.alphaTarget(0.3).restart()
           d.fx = d.x
           d.fy = d.y
@@ -726,14 +736,24 @@ export default function NetworkGraph() {
             )
           }
         }),
-    )
+      )
+      .on("click", (event, d) => {
+        event.stopPropagation()
+        setActiveNodeId(d.id)
+      })
 
     audioLayerRef.current?.dispose()
     const audioLayer = attachAudioLayer({
       nodesSelection: nodeElements.nodes(),
       getExtId: (el) => (el as any).__data__.id,
       rootElement: svgElement,
-      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      options: {
+        allowLocalFileSystem: true,
+        autoSaveMetadata: true,
+        bindGestures: false,
+        onStateChange: (id, st) =>
+          setNodeAudioStates((prev) => ({ ...prev, [id]: st })),
+      },
     })
     audioLayerRef.current = audioLayer
     setFolderReady(audioLayer.hasFolderAccess())
@@ -922,6 +942,47 @@ export default function NetworkGraph() {
             <Button onClick={addNode} className="w-full">
               Agregar Nodo
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!activeNodeId}
+        onOpenChange={(open) => {
+          if (!open) setActiveNodeId(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Audio del nodo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button
+              className="w-full"
+              onClick={() => {
+                if (!activeNodeId) return
+                const st = nodeAudioStates[activeNodeId]
+                if (st === "recording")
+                  audioLayerRef.current?.stopRecording(activeNodeId)
+                else audioLayerRef.current?.startRecording(activeNodeId)
+              }}
+            >
+              {activeNodeId && nodeAudioStates[activeNodeId] === "recording"
+                ? "Detener"
+                : "Grabar"}
+            </Button>
+            <div
+              className="border border-dashed rounded p-4 text-center"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={async (e) => {
+                e.preventDefault()
+                if (!activeNodeId) return
+                const file = e.dataTransfer.files[0]
+                if (file) await audioLayerRef.current?.upload(activeNodeId, file)
+              }}
+            >
+              Arrastra un archivo de audio
+            </div>
           </div>
         </DialogContent>
       </Dialog>
