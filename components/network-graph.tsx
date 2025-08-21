@@ -34,6 +34,12 @@ interface SubjectMap {
   groups: Group[]
 }
 
+interface PersistedConfig {
+  weeks: { id: string; name: string }[]
+  weekSubjectMaps: Record<string, Record<string, SubjectMap[]>>
+  weekCurrentMapIndex: Record<string, Record<string, number>>
+}
+
 const INITIAL_SUBJECT_GROUPS: Record<string, Group[]> = {
   algebra: [{ id: "algebra", name: "Álgebra", color: "#3b82f6" }],
   calculo: [{ id: "calculo", name: "Cálculo", color: "#ef4444" }],
@@ -98,6 +104,21 @@ const DEFAULT_WEEKS = [
   { id: "week2", name: "Semana 2" },
 ]
 
+const createDefaultConfig = (): PersistedConfig => {
+  const weekSubjectMaps: Record<string, Record<string, SubjectMap[]>> = {}
+  const weekCurrentMapIndex: Record<string, Record<string, number>> = {}
+  DEFAULT_WEEKS.forEach((week) => {
+    weekSubjectMaps[week.id] = {}
+    weekCurrentMapIndex[week.id] = {}
+    Object.keys(SUBJECT_DATA).forEach((subjectId) => {
+      const maps = JSON.parse(JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]))
+      weekSubjectMaps[week.id][subjectId] = maps
+      weekCurrentMapIndex[week.id][subjectId] = maps.length - 1
+    })
+  })
+  return { weeks: DEFAULT_WEEKS, weekSubjectMaps, weekCurrentMapIndex }
+}
+
 export default function NetworkGraph() {
   const svgRef = useRef<SVGSVGElement>(null)
   const [nodes, setNodes] = useState<Node[]>([])
@@ -136,7 +157,31 @@ export default function NetworkGraph() {
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
-  const loadPersistedData = useCallback(() => {
+  const persistConfig = useCallback(async () => {
+    if (!audioLayerRef.current?.hasFolderAccess()) return
+    const cfg: PersistedConfig = {
+      weeks,
+      weekSubjectMaps: weekSubjectMapsRef.current,
+      weekCurrentMapIndex: weekCurrentMapIndexRef.current,
+    }
+    await audioLayerRef.current.writeConfig(cfg)
+  }, [weeks])
+  const loadPersistedData = useCallback(async () => {
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      const cfg = await audioLayerRef.current.readConfig<PersistedConfig>()
+      if (cfg) {
+        setWeeks(cfg.weeks)
+        weekSubjectMapsRef.current = cfg.weekSubjectMaps || {}
+        weekCurrentMapIndexRef.current = cfg.weekCurrentMapIndex || {}
+      } else {
+        const def = createDefaultConfig()
+        setWeeks(def.weeks)
+        weekSubjectMapsRef.current = def.weekSubjectMaps
+        weekCurrentMapIndexRef.current = def.weekCurrentMapIndex
+        await audioLayerRef.current.writeConfig(def)
+      }
+      return
+    }
     const storedWeeks = localStorage.getItem("weeks")
     const weeksData = storedWeeks ? JSON.parse(storedWeeks) : DEFAULT_WEEKS
     setWeeks(weeksData)
@@ -163,7 +208,6 @@ export default function NetworkGraph() {
           groups: m.groups,
         }))
 
-        // Remove maps that have no nodes
         maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
         localStorage.setItem(
           `subjectMaps_${week.id}_${subjectId}`,
@@ -222,6 +266,7 @@ export default function NetworkGraph() {
         ),
       )
     })
+    persistConfig()
   }
 
   const selectWeek = (id: string) => {
@@ -257,7 +302,8 @@ export default function NetworkGraph() {
         weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
       ),
     )
-  }, [selectedWeek, selectedSubject])
+    persistConfig()
+  }, [selectedWeek, selectedSubject, persistConfig])
 
   const selectSubject = (id: string) => {
     if (!selectedWeek) return
@@ -345,7 +391,7 @@ export default function NetworkGraph() {
     const ok = await audioLayerRef.current?.requestFolderPermission()
     setFolderReady(!!ok)
     if (ok) {
-      loadPersistedData()
+      await loadPersistedData()
       setStep(1)
     }
   }
@@ -357,8 +403,9 @@ export default function NetworkGraph() {
   useEffect(() => {
     if (weeks.length) {
       localStorage.setItem("weeks", JSON.stringify(weeks))
+      persistConfig()
     }
-  }, [weeks])
+  }, [weeks, persistConfig])
 
   useEffect(() => {
     if (
@@ -737,6 +784,9 @@ export default function NetworkGraph() {
     })
     audioLayerRef.current = audioLayer
     setFolderReady(audioLayer.hasFolderAccess())
+    if (audioLayer.hasFolderAccess()) {
+      loadPersistedData()
+    }
 
     const labelsGroup = container.append("g").attr("class", "labels")
       const labelElements = labelsGroup
@@ -827,7 +877,7 @@ export default function NetworkGraph() {
         simulationRef.current = null
       }
     }
-  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding])
+  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding, loadPersistedData])
 
   if (!isMounted) {
     return <div className="w-full h-screen bg-gray-50 dark:bg-gray-900" />
