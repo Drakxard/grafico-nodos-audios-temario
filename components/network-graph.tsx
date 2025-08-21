@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
+import type { NodeState } from "@/lib/audio/types"
 
 interface Node extends d3.SimulationNodeDatum {
   id: string
@@ -114,11 +115,14 @@ export default function NetworkGraph() {
   const [nodePadding, setNodePadding] = useState(35)
   const [isAwaitingMap, setIsAwaitingMap] = useState(false)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [folderReady, setFolderReady] = useState(false)
   const [weeks, setWeeks] = useState<{ id: string; name: string }[]>([])
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
   const [step, setStep] = useState(0)
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
+  const [nodeAudioStates, setNodeAudioStates] = useState<Record<string, NodeState>>({})
   const weekSubjectMapsRef = useRef<
     Record<string, Record<string, SubjectMap[]>>
   >({})
@@ -134,20 +138,35 @@ export default function NetworkGraph() {
 
   const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
 
+  const readData = useCallback(async (key: string) => {
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      return audioLayerRef.current.readData(key)
+    }
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : null
+  }, [])
+
+  const writeData = useCallback(async (key: string, value: any) => {
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      await audioLayerRef.current.writeData(key, value)
+    } else {
+      localStorage.setItem(key, JSON.stringify(value))
+    }
+  }, [])
+
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
-  const loadPersistedData = useCallback(() => {
-    const storedWeeks = localStorage.getItem("weeks")
-    const weeksData = storedWeeks ? JSON.parse(storedWeeks) : DEFAULT_WEEKS
+  const loadPersistedData = useCallback(async () => {
+    const storedWeeks = await readData("weeks")
+    const weeksData = storedWeeks || DEFAULT_WEEKS
     setWeeks(weeksData)
-    weeksData.forEach((week: { id: string; name: string }) => {
+    for (const week of weeksData) {
       weekSubjectMapsRef.current[week.id] = {}
       weekCurrentMapIndexRef.current[week.id] = {}
-      Object.keys(SUBJECT_DATA).forEach((subjectId) => {
-        const storedMaps =
-          localStorage.getItem(`subjectMaps_${week.id}_${subjectId}`) || null
+      for (const subjectId of Object.keys(SUBJECT_DATA)) {
+        const storedMaps = await readData(`subjectMaps_${week.id}_${subjectId}`)
         let maps = storedMaps
-          ? JSON.parse(storedMaps)
+          ? storedMaps
           : JSON.parse(JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]))
         maps = maps.map((m: any) => ({
           nodes: (m.nodes || []).map((n: any) => ({
@@ -163,18 +182,15 @@ export default function NetworkGraph() {
           groups: m.groups,
         }))
 
-        // Remove maps that have no nodes
         maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
-        localStorage.setItem(
-          `subjectMaps_${week.id}_${subjectId}`,
-          JSON.stringify(maps),
-        )
+        await writeData(`subjectMaps_${week.id}_${subjectId}`, maps)
 
         if (!maps.some((m: any) => m.groups)) {
-          const storedGroups =
-            localStorage.getItem(`subjectGroups_${week.id}_${subjectId}`) || null
+          const storedGroups = await readData(
+            `subjectGroups_${week.id}_${subjectId}`,
+          )
           const groups = storedGroups
-            ? JSON.parse(storedGroups)
+            ? storedGroups
             : JSON.parse(JSON.stringify(INITIAL_SUBJECT_GROUPS[subjectId]))
           maps = maps.map((m: any) => ({
             ...m,
@@ -184,42 +200,39 @@ export default function NetworkGraph() {
 
         weekSubjectMapsRef.current[week.id][subjectId] = maps
 
-        const index =
-          localStorage.getItem(
-            `currentMapIndex_${week.id}_${subjectId}`,
-          ) || null
-        weekCurrentMapIndexRef.current[week.id][subjectId] = index
-          ? JSON.parse(index)
-          : Math.max(0, maps.length - 1)
-      })
-    })
-  }, [])
+        const index = await readData(
+          `currentMapIndex_${week.id}_${subjectId}`,
+        )
+        weekCurrentMapIndexRef.current[week.id][subjectId] =
+          index ?? Math.max(0, maps.length - 1)
+      }
+    }
+  }, [readData, writeData])
 
   const addWeek = () => {
     const newNumber = weeks.length + 1
     const newWeek = { id: `week${Date.now()}`, name: `Semana ${newNumber}` }
     setWeeks((prev) => {
       const next = [...prev, newWeek]
-      localStorage.setItem("weeks", JSON.stringify(next))
+      void writeData("weeks", next)
       return next
     })
     weekSubjectMapsRef.current[newWeek.id] = {}
     weekCurrentMapIndexRef.current[newWeek.id] = {}
     Object.keys(SUBJECT_DATA).forEach((subjectId) => {
-      weekSubjectMapsRef.current[newWeek.id][subjectId] = JSON.parse(
+      const maps = JSON.parse(
         JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]),
       )
+      weekSubjectMapsRef.current[newWeek.id][subjectId] = maps
       weekCurrentMapIndexRef.current[newWeek.id][subjectId] =
-        weekSubjectMapsRef.current[newWeek.id][subjectId].length - 1
-      localStorage.setItem(
+        maps.length - 1
+      void writeData(
         `subjectMaps_${newWeek.id}_${subjectId}`,
-        JSON.stringify(weekSubjectMapsRef.current[newWeek.id][subjectId]),
+        maps,
       )
-      localStorage.setItem(
+      void writeData(
         `currentMapIndex_${newWeek.id}_${subjectId}`,
-        JSON.stringify(
-          weekCurrentMapIndexRef.current[newWeek.id][subjectId],
-        ),
+        weekCurrentMapIndexRef.current[newWeek.id][subjectId],
       )
     })
   }
@@ -247,17 +260,15 @@ export default function NetworkGraph() {
       })),
       groups: m.groups,
     }))
-    localStorage.setItem(
+    void writeData(
       `subjectMaps_${selectedWeek}_${selectedSubject}`,
-      JSON.stringify(serializedMaps),
+      serializedMaps,
     )
-    localStorage.setItem(
+    void writeData(
       `currentMapIndex_${selectedWeek}_${selectedSubject}`,
-      JSON.stringify(
-        weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
-      ),
+      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
     )
-  }, [selectedWeek, selectedSubject])
+  }, [selectedWeek, selectedSubject, writeData])
 
   const selectSubject = (id: string) => {
     if (!selectedWeek) return
@@ -335,7 +346,13 @@ export default function NetworkGraph() {
         nodesSelection: [],
         getExtId: () => "",
         rootElement: svgRef.current,
-        options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+        options: {
+          allowLocalFileSystem: true,
+          autoSaveMetadata: true,
+          bindGestures: false,
+          onStateChange: (id, st) =>
+            setNodeAudioStates((prev) => ({ ...prev, [id]: st })),
+        },
       })
     }
   }
@@ -345,7 +362,7 @@ export default function NetworkGraph() {
     const ok = await audioLayerRef.current?.requestFolderPermission()
     setFolderReady(!!ok)
     if (ok) {
-      loadPersistedData()
+      await loadPersistedData()
       setStep(1)
     }
   }
@@ -355,10 +372,18 @@ export default function NetworkGraph() {
   }, [])
 
   useEffect(() => {
-    if (weeks.length) {
-      localStorage.setItem("weeks", JSON.stringify(weeks))
+    ensureAudioLayer()
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      setFolderReady(true)
+      loadPersistedData().then(() => setStep(1))
     }
-  }, [weeks])
+  }, [loadPersistedData])
+
+  useEffect(() => {
+    if (weeks.length) {
+      void writeData("weeks", weeks)
+    }
+  }, [weeks, writeData])
 
   useEffect(() => {
     if (
@@ -685,10 +710,11 @@ export default function NetworkGraph() {
       .attr("cy", (d) => d.y ?? height / 2)
       .style("cursor", "pointer")
 
-    nodeElements.call(
-      d3
-        .drag<SVGCircleElement, Node>()
-        .on("start", function (event, d) {
+    nodeElements
+      .call(
+        d3
+          .drag<SVGCircleElement, Node>()
+          .on("start", function (event, d) {
           if (!event.active && simulation) simulation.alphaTarget(0.3).restart()
           d.fx = d.x
           d.fy = d.y
@@ -726,14 +752,24 @@ export default function NetworkGraph() {
             )
           }
         }),
-    )
+      )
+      .on("click", (event, d) => {
+        event.stopPropagation()
+        setActiveNodeId(d.id)
+      })
 
     audioLayerRef.current?.dispose()
     const audioLayer = attachAudioLayer({
       nodesSelection: nodeElements.nodes(),
       getExtId: (el) => (el as any).__data__.id,
       rootElement: svgElement,
-      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      options: {
+        allowLocalFileSystem: true,
+        autoSaveMetadata: true,
+        bindGestures: false,
+        onStateChange: (id, st) =>
+          setNodeAudioStates((prev) => ({ ...prev, [id]: st })),
+      },
     })
     audioLayerRef.current = audioLayer
     setFolderReady(audioLayer.hasFolderAccess())
@@ -922,6 +958,67 @@ export default function NetworkGraph() {
             <Button onClick={addNode} className="w-full">
               Agregar Nodo
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!activeNodeId}
+        onOpenChange={(open) => {
+          if (!open) setActiveNodeId(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Audio del nodo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button
+              className="w-full"
+              onClick={() => {
+                if (!activeNodeId) return
+                const st = nodeAudioStates[activeNodeId]
+                if (st === "recording")
+                  audioLayerRef.current?.stopRecording(activeNodeId)
+                else audioLayerRef.current?.startRecording(activeNodeId)
+              }}
+            >
+              {activeNodeId && nodeAudioStates[activeNodeId] === "recording"
+                ? "Detener"
+                : "Grabar"}
+            </Button>
+            <div
+              className="border border-dashed rounded p-4 text-center"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={async (e) => {
+                e.preventDefault()
+                if (!activeNodeId) return
+                const file = e.dataTransfer.files[0]
+                if (file) await audioLayerRef.current?.upload(activeNodeId, file)
+              }}
+            >
+              Arrastra un archivo de audio
+            </div>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Seleccionar archivo
+            </Button>
+            <Input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                if (file && activeNodeId) {
+                  await audioLayerRef.current?.upload(activeNodeId, file)
+                }
+                e.target.value = ""
+              }}
+            />
           </div>
         </DialogContent>
       </Dialog>
