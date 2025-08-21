@@ -288,6 +288,11 @@ export default function NetworkGraph() {
     setIsConfigDialogOpen(false)
   }
 
+  const handleBackToSubjects = useCallback(() => {
+    setSelectedSubject(null)
+    setIsConfigDialogOpen(true)
+  }, [])
+
   const handleBack = useCallback(() => {
     if (selectedSubject) {
       setSelectedSubject(null)
@@ -826,11 +831,11 @@ export default function NetworkGraph() {
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
-      {(folderReady || selectedWeek || selectedSubject) && (
+      {selectedSubject && !isConfigDialogOpen && (
         <Button
           className="absolute top-4 left-4 z-[60]"
           variant="outline"
-          onClick={handleBack}
+          onClick={handleBackToSubjects}
         >
           ←
         </Button>
