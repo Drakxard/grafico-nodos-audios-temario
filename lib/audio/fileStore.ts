@@ -176,20 +176,20 @@ export class FileStore {
   }
 
   async deleteAudio(extId: string, ext = 'webm'): Promise<void> {
-if (this.dirHandle) {
-  try {
-    const file = await this.getAudioFileHandle(extId, ext, false);
-    await file.remove?.();
-  } catch {
-    /* ignore */
+    if (this.dirHandle) {
+      try {
+        const file = await this.getAudioFileHandle(extId, ext, false)
+        await file.remove?.()
+      } catch {
+        /* ignore */
+      }
+    } else {
+      const db = await this.openDB()
+      const tx = db.transaction('audios', 'readwrite')
+      tx.objectStore('audios').delete(extId)
+      await (tx as any).done?.catch(() => {})
+    }
   }
-} else {
-  const db = await this.openDB();
-  const tx = db.transaction('audios', 'readwrite');
-  tx.objectStore('audios').delete(extId);
-  await (tx as any).done?.catch(() => {});
-}
-
 
   async readMeta(): Promise<MetadataFile> {
     if (this.dirHandle) {
