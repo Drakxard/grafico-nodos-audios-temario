@@ -1172,5 +1172,6 @@ audioLayer.ready.then((has) => {
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
+};
 }
