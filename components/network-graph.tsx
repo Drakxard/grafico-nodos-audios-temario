@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import * as d3 from "d3"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -128,6 +128,13 @@ export default function NetworkGraph() {
     {},
   )
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(true)
+
+  const currentStep = useMemo(() => {
+    if (!folderReady) return 0
+    if (!selectedWeek) return 1
+    if (!selectedSubject) return 2
+    return 3
+  }, [folderReady, selectedWeek, selectedSubject])
 
   const DELETE_DISTANCE = 150
 
@@ -289,17 +296,23 @@ export default function NetworkGraph() {
   }
 
   const handleBack = useCallback(() => {
-    if (selectedSubject) {
-      setSelectedSubject(null)
-    } else if (selectedWeek) {
-      setSelectedWeek(null)
-    } else if (folderReady) {
-      setFolderReady(false)
-      setSelectedWeek(null)
-      setSelectedSubject(null)
+    switch (currentStep) {
+      case 3:
+        setSelectedSubject(null)
+        break
+      case 2:
+        setSelectedWeek(null)
+        break
+      case 1:
+        setFolderReady(false)
+        setSelectedWeek(null)
+        setSelectedSubject(null)
+        break
+      default:
+        break
     }
     setIsConfigDialogOpen(true)
-  }, [selectedSubject, selectedWeek, folderReady])
+  }, [currentStep])
 
   const deleteGroup = (id: string) => {
     const nextGroups = groups.filter((g) => g.id !== id)
@@ -826,7 +839,7 @@ export default function NetworkGraph() {
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
-      {(folderReady || selectedWeek || selectedSubject) && (
+      {currentStep > 0 && (
         <Button
           className="absolute top-4 left-4 z-[60]"
           variant="outline"
@@ -839,15 +852,15 @@ export default function NetworkGraph() {
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
         <DialogContent>
           <DialogHeader className="flex items-center gap-2">
-            {(folderReady || selectedWeek || selectedSubject) && (
+            {currentStep > 0 && (
               <Button variant="outline" onClick={handleBack} className="px-2">
                 ←
               </Button>
             )}
             <DialogTitle>
-              {!folderReady
+              {currentStep === 0
                 ? "Configura carpeta"
-                : !selectedWeek
+                : currentStep === 1
                 ? "Selecciona semana"
                 : "Selecciona materia"}
             </DialogTitle>
@@ -856,7 +869,7 @@ export default function NetworkGraph() {
             <Button onClick={handleFolderClick} className="w-full">
               {folderReady ? "Carpeta lista" : "Cargar carpeta local"}
             </Button>
-            {folderReady && !selectedWeek && (
+            {currentStep === 1 && (
               <div className="grid gap-2">
                 {weeks.map((w) => (
                   <Button
@@ -872,7 +885,7 @@ export default function NetworkGraph() {
                 </Button>
               </div>
             )}
-            {folderReady && selectedWeek && !selectedSubject && (
+            {currentStep === 2 && (
               <div className="grid gap-2">
                 {Object.entries(SUBJECT_DATA).map(([id, data]) => (
                   <Button
