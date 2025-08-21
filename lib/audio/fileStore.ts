@@ -102,7 +102,6 @@ export class FileStore {
     }
     return this.dbPromise;
   }
-
   async readConfig<T = any>(): Promise<T | null> {
     if (this.dirHandle) {
       try {
@@ -127,38 +126,39 @@ export class FileStore {
   async writeConfig<T = any>(cfg: T): Promise<void> {
     if (this.dirHandle) {
       const dataDir = await this.getDataDir();
-        const tmp = await dataDir.getFileHandle('config.tmp.json', { create: true });
-        const writable = await (tmp as any).createWritable();
+      const tmp = await dataDir.getFileHandle('config.tmp.json', { create: true });
+      const writable = await (tmp as any).createWritable();
       await writable.write(JSON.stringify(cfg));
       await writable.close();
-        await dataDir.removeEntry?.('config.json').catch(() => {});
-        await (tmp as any).move?.('config.json');
+      await dataDir.removeEntry?.('config.json').catch(() => {});
+      await (tmp as any).move?.('config.json');
     } else {
       const db = await this.openDB();
-        const tx = db.transaction('config', 'readwrite');
-        tx.objectStore('config').put(cfg, 'singleton');
-        await (tx as any).done?.catch(() => {});
+      const tx = db.transaction('config', 'readwrite');
+      tx.objectStore('config').put(cfg, 'singleton');
+      await (tx as any).done?.catch(() => {});
     }
   }
 
-  async writeAudio(extId: string, blob: Blob): Promise<void> {
+  async writeAudio(extId: string, blob: Blob, ext = 'webm'): Promise<void> {
     if (this.dirHandle) {
-        const file = await this.getAudioFileHandle(extId, true);
-        const writable = await (file as any).createWritable();
+      const file = await this.getAudioFileHandle(extId, ext, true);
+      const writable = await file.createWritable();
       await writable.write(blob);
       await writable.close();
     } else {
       const db = await this.openDB();
-        const tx = db.transaction('audios', 'readwrite');
-        tx.objectStore('audios').put({ blob, mime: blob.type }, extId);
-        await (tx as any).done?.catch(() => {});
+      const tx = db.transaction('audios', 'readwrite');
+      tx.objectStore('audios').put({ blob, mime: blob.type, ext }, extId);
+      await tx.done?.catch(() => {});
     }
   }
 
-  async readAudio(extId: string): Promise<Blob | null> {
+
+  async readAudio(extId: string, ext = 'webm'): Promise<Blob | null> {
     if (this.dirHandle) {
       try {
-        const file = await this.getAudioFileHandle(extId, false);
+        const file = await this.getAudioFileHandle(extId, ext, false);
         const blob = await file.getFile();
         return blob;
       } catch {
@@ -175,21 +175,21 @@ export class FileStore {
     }
   }
 
-  async deleteAudio(extId: string): Promise<void> {
-    if (this.dirHandle) {
-      try {
-          const file = await this.getAudioFileHandle(extId, false);
-          await (file as any).remove?.();
-      } catch {
-        /* ignore */
-      }
-    } else {
-      const db = await this.openDB();
-        const tx = db.transaction('audios', 'readwrite');
-        tx.objectStore('audios').delete(extId);
-        await (tx as any).done?.catch(() => {});
-    }
+  async deleteAudio(extId: string, ext = 'webm'): Promise<void> {
+if (this.dirHandle) {
+  try {
+    const file = await this.getAudioFileHandle(extId, ext, false);
+    await file.remove?.();
+  } catch {
+    /* ignore */
   }
+} else {
+  const db = await this.openDB();
+  const tx = db.transaction('audios', 'readwrite');
+  tx.objectStore('audios').delete(extId);
+  await (tx as any).done?.catch(() => {});
+}
+
 
   async readMeta(): Promise<MetadataFile> {
     if (this.dirHandle) {
@@ -225,10 +225,14 @@ export class FileStore {
     }
   }
 
-  private async getAudioFileHandle(extId: string, create: boolean) {
+  private async getAudioFileHandle(extId: string, ext: string, create: boolean) {
     const audios = await this.getAudiosDir();
     const safe = extId.replace(/[^A-Za-z0-9 .,_-]/g, '_');
-    return audios.getFileHandle(`${safe}.webm`, { create });
+    return audios.getFileHandle(`${safe}.${ext}`, { create });
+  }
+
+  getDirName(): string | null {
+    return this.dirHandle?.name ?? null;
   }
 
   private async getAudiosDir() {

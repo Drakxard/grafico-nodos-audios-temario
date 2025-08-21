@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
 import { useTheme } from "next-themes"
+import { loadConfig, saveConfig } from "@/lib/config"
 
 interface GraphNode extends d3.SimulationNodeDatum {
   id: string
@@ -140,6 +141,7 @@ export default function NetworkGraph() {
   const [isAwaitingMap, setIsAwaitingMap] = useState(false)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
   const [folderReady, setFolderReady] = useState(false)
+  const [folderName, setFolderName] = useState("")
   const [weeks, setWeeks] = useState<{ id: string; name: string }[]>([])
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
@@ -393,7 +395,7 @@ export default function NetworkGraph() {
     }
   }
 
-  const ensureAudioLayer = () => {
+  const ensureAudioLayer = useCallback(async () => {
     if (!audioLayerRef.current && svgRef.current) {
       audioLayerRef.current = attachAudioLayer({
         nodesSelection: [],
@@ -402,21 +404,43 @@ export default function NetworkGraph() {
         options: { allowLocalFileSystem: true, autoSaveMetadata: true },
       })
     }
-  }
+    if (audioLayerRef.current) {
+      const has = await audioLayerRef.current.ready
+      setFolderReady(has)
+      if (has) {
+        const name = audioLayerRef.current.getFolderName() || ""
+        setFolderName(name)
+        saveConfig({ folderName: name })
+      }
+      return has
+    }
+    return false
+  }, [])
 
   const handleFolderClick = async () => {
-    ensureAudioLayer()
+    await ensureAudioLayer()
     const ok = await audioLayerRef.current?.requestFolderPermission()
     setFolderReady(!!ok)
-    if (ok) {
-      await loadPersistedData()
-      setStep(1)
-    }
-  }
+if (ok) {
+  const name = audioLayerRef.current?.getFolderName() || ""
+  setFolderName(name)
+  saveConfig({ folderName: name })
+  await loadPersistedData()
+  setStep(1)
+}
+
 
   useEffect(() => {
     setIsMounted(true)
-  }, [])
+    const cfg = loadConfig()
+    if (cfg.folderName) setFolderName(cfg.folderName)
+    ensureAudioLayer().then((has) => {
+      if (has) {
+        loadPersistedData()
+        setStep(1)
+      }
+    })
+  }, [ensureAudioLayer, loadPersistedData])
 
   useEffect(() => {
     if (weeks.length) {
@@ -808,11 +832,17 @@ export default function NetworkGraph() {
       rootElement: svgElement,
       options: { allowLocalFileSystem: true, autoSaveMetadata: true },
     })
-    audioLayerRef.current = audioLayer
-    setFolderReady(audioLayer.hasFolderAccess())
-    if (audioLayer.hasFolderAccess()) {
-      loadPersistedData()
-    }
+audioLayerRef.current = audioLayer
+audioLayer.ready.then((has) => {
+  setFolderReady(has)
+  if (has) {
+    const name = audioLayer.getFolderName() || ""
+    setFolderName(name)
+    saveConfig({ folderName: name })
+    loadPersistedData()
+  }
+})
+
 
     const labelsGroup = container.append("g").attr("class", "labels")
       const labelElements = labelsGroup
@@ -965,8 +995,11 @@ export default function NetworkGraph() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {folderName && (
+              <div className="text-sm text-center">Carpeta actual: {folderName}</div>
+            )}
             <Button onClick={handleFolderClick} className="w-full">
-              {folderReady ? "Carpeta lista" : "Cargar carpeta local"}
+              {folderReady ? "Cambiar carpeta" : "Seleccionar carpeta local"}
             </Button>
             {step === 1 && (
               <div className="grid gap-2">
