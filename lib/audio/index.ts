@@ -144,12 +144,12 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
       },
       options?.longPressMs
     );
-    el.addEventListener('dragover', e => {
+    el.addEventListener('dragover', (e) => {
       e.preventDefault();
     });
-    el.addEventListener('drop', e => {
+    el.addEventListener('drop', (e) => {
       e.preventDefault();
-      const file = e.dataTransfer?.files?.[0];
+      const file = (e as DragEvent).dataTransfer?.files?.[0];
       if (file) importFile(extId, file);
     });
   };

@@ -9,18 +9,20 @@ import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
 import { useTheme } from "next-themes"
 
-interface Node extends d3.SimulationNodeDatum {
+interface GraphNode extends d3.SimulationNodeDatum {
   id: string
   name: string
   group: string
   color: string
   startX?: number
   startY?: number
+  x?: number
+  y?: number
 }
 
-interface Link extends d3.SimulationLinkDatum<Node> {
-  source: string | Node
-  target: string | Node
+interface Link extends d3.SimulationLinkDatum<GraphNode> {
+  source: string | GraphNode
+  target: string | GraphNode
 }
 
 interface Group {
@@ -30,7 +32,7 @@ interface Group {
 }
 
 interface SubjectMap {
-  nodes: Node[]
+  nodes: GraphNode[]
   links: Link[]
   groups: Group[]
 }
@@ -123,7 +125,7 @@ const createDefaultConfig = (): PersistedConfig => {
 
 export default function NetworkGraph() {
   const svgRef = useRef<SVGSVGElement>(null)
-  const [nodes, setNodes] = useState<Node[]>([])
+  const [nodes, setNodes] = useState<GraphNode[]>([])
   const [links, setLinks] = useState<Link[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [currentGroup, setCurrentGroup] = useState<string>("")
@@ -164,7 +166,7 @@ export default function NetworkGraph() {
 
   const DELETE_DISTANCE = 150
 
-  const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
+  const simulationRef = useRef<d3.Simulation<GraphNode, Link> | null>(null)
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
@@ -582,7 +584,7 @@ export default function NetworkGraph() {
     const groupData = groups.find((g) => g.id === currentGroup)
     if (!groupData) return
 
-    const newNode: Node = {
+    const newNode: GraphNode = {
       id: Date.now().toString(),
       name: newNodeName.trim(),
       group: currentGroup,
@@ -708,7 +710,7 @@ export default function NetworkGraph() {
       .force(
         "link",
         d3
-          .forceLink<Node, Link>(linksCopy)
+          .forceLink<GraphNode, Link>(linksCopy)
           .id((d) => d.id)
           .distance(100)
           .strength(0.5),
@@ -758,15 +760,15 @@ export default function NetworkGraph() {
 
     nodeElements.call(
       d3
-        .drag<SVGCircleElement, Node>()
-        .on("start", function (event, d) {
+        .drag<SVGCircleElement, GraphNode>()
+        .on("start", function (this: SVGCircleElement, event: any, d: GraphNode) {
           if (!event.active && simulation) simulation.alphaTarget(0.3).restart()
           d.fx = d.x
           d.fy = d.y
           d.startX = d.x
           d.startY = d.y
         })
-        .on("drag", function (event, d) {
+        .on("drag", function (this: SVGCircleElement, event: any, d: GraphNode) {
           d.fx = event.x
           d.fy = event.y
           const dx = event.x - (d.startX ?? 0)
@@ -776,7 +778,7 @@ export default function NetworkGraph() {
           const newColor = d3.interpolateRgb(d.color, "#ff0000")(progress)
           d3.select(this).attr("fill", newColor)
         })
-        .on("end", function (event, d) {
+        .on("end", function (this: SVGCircleElement, event: any, d: GraphNode) {
           if (!event.active && simulation) simulation.alphaTarget(0)
           d.fx = null
           d.fy = null
@@ -860,28 +862,30 @@ export default function NetworkGraph() {
 
       try {
         linkElements
-          .attr("x1", (d) => {
-            const source = d.source as Node
+          .attr("x1", (d: any) => {
+            const source = d.source as GraphNode
             return source.x || 0
           })
-          .attr("y1", (d) => {
-            const source = d.source as Node
+          .attr("y1", (d: any) => {
+            const source = d.source as GraphNode
             return source.y || 0
           })
-          .attr("x2", (d) => {
-            const target = d.target as Node
+          .attr("x2", (d: any) => {
+            const target = d.target as GraphNode
             return target.x || 0
           })
-          .attr("y2", (d) => {
-            const target = d.target as Node
+          .attr("y2", (d: any) => {
+            const target = d.target as GraphNode
             return target.y || 0
           })
 
-          nodeElements.attr("cx", (d) => d.x || 0).attr("cy", (d) => d.y || 0)
+          nodeElements
+            .attr("cx", (d: any) => d.x || 0)
+            .attr("cy", (d: any) => d.y || 0)
 
           labelElements
-            .attr("x", (d) => d.x || 0)
-            .attr("y", (d) => (d.y || 0) + 30)
+            .attr("x", (d: any) => d.x || 0)
+            .attr("y", (d: any) => (d.y || 0) + 30)
       } catch (error) {
         console.log("[v0] Error during tick update, stopping simulation:", error)
         simulation.stop()
