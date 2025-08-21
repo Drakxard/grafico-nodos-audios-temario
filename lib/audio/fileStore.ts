@@ -189,7 +189,7 @@ if (this.dirHandle) {
   tx.objectStore('audios').delete(extId);
   await (tx as any).done?.catch(() => {});
 }
-
+  }
 
   async readMeta(): Promise<MetadataFile> {
     if (this.dirHandle) {
