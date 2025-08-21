@@ -45,7 +45,7 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
   const stopRecording = async (extId: string) => {
     try {
       const blob = await recorder.stop();
-      await store.writeAudio(extId, blob, 'webm');
+      await store.writeAudio(extId, blob);
       const duration = await getDuration(blob);
       const now = new Date().toISOString();
       metadata.nodes[extId] = {
@@ -65,9 +65,7 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
 
   const play = async (extId: string) => {
     try {
-      const meta = metadata.nodes[extId];
-      const ext = meta?.local_path?.split('.').pop() || 'webm';
-      const blob = await store.readAudio(extId, ext);
+      const blob = await store.readAudio(extId);
       if (!blob) throw new Error('missing');
       if (player.playingExtId && player.playingExtId !== extId) {
         player.pause();
@@ -86,23 +84,19 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
   };
 
   const del = async (extId: string) => {
-    const meta = metadata.nodes[extId];
-    const ext = meta?.local_path?.split('.').pop() || 'webm';
-    await store.deleteAudio(extId, ext);
+    await store.deleteAudio(extId);
     metadata.nodes[extId] = null;
     await saveMetadata();
     updateState(extId, 'idle');
   };
 
   const download = async (extId: string) => {
-    const meta = metadata.nodes[extId];
-    const ext = meta?.local_path?.split('.').pop() || 'webm';
-    const blob = await store.readAudio(extId, ext);
+    const blob = await store.readAudio(extId);
     if (!blob) return;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${extId}.${ext}`;
+    a.download = `${extId}.webm`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -127,48 +121,18 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
       },
       options?.longPressMs
     );
-
-    el.addEventListener('dragover', e => {
-      e.preventDefault();
-    });
-
-    el.addEventListener('drop', async e => {
-      e.preventDefault();
-      const file = e.dataTransfer?.files?.[0];
-      if (!file) return;
-      try {
-        const ext = file.name.split('.').pop()?.toLowerCase() || 'webm';
-        await store.writeAudio(extId, file, ext);
-        const duration = await getDuration(file);
-        const now = new Date().toISOString();
-        metadata.nodes[extId] = {
-          extId,
-          local_path: `audios/${extId}.${ext}`,
-          duration_seconds: duration,
-          mime: file.type,
-          created_at: now,
-          last_modified: now,
-        };
-        await saveMetadata();
-        updateState(extId, 'has-audio');
-      } catch (err) {
-        options?.onError?.('E_WRITE_FAIL', err);
-      }
-    });
   };
 
   for (const el of nodesSelection) bind(el);
-  const ready = store.init().then(loadMetadata).then(() => store.hasAccess());
+  store.init().then(loadMetadata);
 
   return {
-    ready,
     requestFolderPermission: async () => {
       const ok = await store.requestFolderPermission();
       if (ok) metadata = await store.readMeta();
       return ok;
     },
     hasFolderAccess: () => store.hasAccess(),
-    getFolderName: () => store.getDirName(),
     startRecording,
     stopRecording,
     play,
