@@ -162,6 +162,8 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
     delete: del,
     download,
     upload,
+    readData: (key: string) => store.readJson(key),
+    writeData: (key: string, data: any) => store.writeJson(key, data),
     dispose: () => {
       state.clear();
     },
