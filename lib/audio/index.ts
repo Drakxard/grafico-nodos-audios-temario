@@ -25,6 +25,9 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
 
   const loadMetadata = async () => {
     metadata = await store.readMeta();
+    for (const [extId, meta] of Object.entries(metadata.nodes)) {
+      updateState(extId, meta ? 'has-audio' : 'idle');
+    }
   };
 
   const saveMetadata = async () => {
@@ -101,6 +104,26 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
     URL.revokeObjectURL(url);
   };
 
+  const importFile = async (extId: string, file: File) => {
+    try {
+      await store.writeAudio(extId, file);
+      const duration = await getDuration(file);
+      const now = new Date().toISOString();
+      metadata.nodes[extId] = {
+        extId,
+        local_path: `audios/${extId}.webm`,
+        duration_seconds: duration,
+        mime: file.type,
+        created_at: now,
+        last_modified: now,
+      };
+      await saveMetadata();
+      updateState(extId, 'has-audio');
+    } catch (e) {
+      options?.onError?.('E_WRITE_FAIL', e);
+    }
+  };
+
   const bind = (el: HTMLElement | SVGElement) => {
     const extId = getExtId(el);
     bindTapAndLongPress(
@@ -121,6 +144,14 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
       },
       options?.longPressMs
     );
+    el.addEventListener('dragover', e => {
+      e.preventDefault();
+    });
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      const file = e.dataTransfer?.files?.[0];
+      if (file) importFile(extId, file);
+    });
   };
 
   for (const el of nodesSelection) bind(el);
@@ -129,16 +160,19 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
   return {
     requestFolderPermission: async () => {
       const ok = await store.requestFolderPermission();
-      if (ok) metadata = await store.readMeta();
+      if (ok) await loadMetadata();
       return ok;
     },
     hasFolderAccess: () => store.hasAccess(),
+    readConfig: <T>() => store.readConfig<T>(),
+    writeConfig: <T>(cfg: T) => store.writeConfig(cfg),
     startRecording,
     stopRecording,
     play,
     pause,
     delete: del,
     download,
+    importFile,
     dispose: () => {
       state.clear();
     },
