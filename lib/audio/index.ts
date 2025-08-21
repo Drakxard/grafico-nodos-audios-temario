@@ -25,6 +25,9 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
 
   const loadMetadata = async () => {
     metadata = await store.readMeta();
+    Object.keys(metadata.nodes).forEach(id => {
+      if (metadata.nodes[id]) updateState(id, 'has-audio');
+    });
   };
 
   const saveMetadata = async () => {
@@ -157,7 +160,12 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
   return {
     requestFolderPermission: async () => {
       const ok = await store.requestFolderPermission();
-      if (ok) metadata = await store.readMeta();
+      if (ok) {
+        metadata = await store.readMeta();
+        Object.keys(metadata.nodes).forEach(id => {
+          if (metadata.nodes[id]) updateState(id, 'has-audio');
+        });
+      }
       return ok;
     },
     hasFolderAccess: () => store.hasAccess(),

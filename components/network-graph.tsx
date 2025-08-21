@@ -822,7 +822,7 @@ export default function NetworkGraph() {
         .attr("font-size", 12)
         .attr("font-family", "sans-serif")
         .attr("text-anchor", "middle")
-        .attr("fill", (d) => d.color)
+        .style("fill", "var(--foreground)")
         .attr("pointer-events", "none")
 
     simulation.on("tick", () => {
