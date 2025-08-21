@@ -118,6 +118,7 @@ export default function NetworkGraph() {
   const [weeks, setWeeks] = useState<{ id: string; name: string }[]>([])
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
+  const [step, setStep] = useState(0)
   const weekSubjectMapsRef = useRef<
     Record<string, Record<string, SubjectMap[]>>
   >({})
@@ -226,6 +227,7 @@ export default function NetworkGraph() {
   const selectWeek = (id: string) => {
     setSelectedWeek(id)
     setCurrentMapIndex({ ...weekCurrentMapIndexRef.current[id] })
+    setStep(2)
   }
 
   const saveCurrentSubjectData = useCallback(() => {
@@ -276,6 +278,7 @@ export default function NetworkGraph() {
       setShowAllGroups(false)
       setIsConfigDialogOpen(false)
       setIsAwaitingMap(true)
+      setStep(3)
       return
     }
     const idx = currentMapIndex[id] ?? maps.length - 1
@@ -286,20 +289,26 @@ export default function NetworkGraph() {
     setCurrentGroup(map.groups[0]?.id || "")
     setShowAllGroups(false)
     setIsConfigDialogOpen(false)
+    setStep(3)
   }
 
   const handleBack = useCallback(() => {
-    if (selectedSubject) {
+    if (step === 3) {
+      saveCurrentSubjectData()
       setSelectedSubject(null)
-    } else if (selectedWeek) {
+      setStep(2)
+    } else if (step === 2) {
+      setSelectedSubject(null)
       setSelectedWeek(null)
-    } else if (folderReady) {
+      setStep(1)
+    } else if (step === 1) {
       setFolderReady(false)
       setSelectedWeek(null)
       setSelectedSubject(null)
+      setStep(0)
     }
     setIsConfigDialogOpen(true)
-  }, [selectedSubject, selectedWeek, folderReady])
+  }, [step, saveCurrentSubjectData])
 
   const deleteGroup = (id: string) => {
     const nextGroups = groups.filter((g) => g.id !== id)
@@ -337,6 +346,7 @@ export default function NetworkGraph() {
     setFolderReady(!!ok)
     if (ok) {
       loadPersistedData()
+      setStep(1)
     }
   }
 
@@ -826,7 +836,7 @@ export default function NetworkGraph() {
   return (
     <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
       <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
-      {(folderReady || selectedWeek || selectedSubject) && (
+      {step > 0 && (
         <Button
           className="absolute top-4 left-4 z-[60]"
           variant="outline"
@@ -839,15 +849,15 @@ export default function NetworkGraph() {
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
         <DialogContent>
           <DialogHeader className="flex items-center gap-2">
-            {(folderReady || selectedWeek || selectedSubject) && (
+            {step > 0 && (
               <Button variant="outline" onClick={handleBack} className="px-2">
                 ←
               </Button>
             )}
             <DialogTitle>
-              {!folderReady
+              {step === 0
                 ? "Configura carpeta"
-                : !selectedWeek
+                : step === 1
                 ? "Selecciona semana"
                 : "Selecciona materia"}
             </DialogTitle>
@@ -856,7 +866,7 @@ export default function NetworkGraph() {
             <Button onClick={handleFolderClick} className="w-full">
               {folderReady ? "Carpeta lista" : "Cargar carpeta local"}
             </Button>
-            {folderReady && !selectedWeek && (
+            {step === 1 && (
               <div className="grid gap-2">
                 {weeks.map((w) => (
                   <Button
@@ -872,7 +882,7 @@ export default function NetworkGraph() {
                 </Button>
               </div>
             )}
-            {folderReady && selectedWeek && !selectedSubject && (
+            {step === 2 && (
               <div className="grid gap-2">
                 {Object.entries(SUBJECT_DATA).map(([id, data]) => (
                   <Button
