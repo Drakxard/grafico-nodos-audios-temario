@@ -417,18 +417,18 @@ export default function NetworkGraph() {
     return false
   }, [])
 
-  const handleFolderClick = async () => {
+const handleFolderClick = async () => {
     await ensureAudioLayer()
     const ok = await audioLayerRef.current?.requestFolderPermission()
     setFolderReady(!!ok)
-if (ok) {
-  const name = audioLayerRef.current?.getFolderName() || ""
-  setFolderName(name)
-  saveConfig({ folderName: name })
-  await loadPersistedData()
-  setStep(1)
-}
-
+    if (ok) {
+      const name = audioLayerRef.current?.getFolderName() || ""
+      setFolderName(name)
+      saveConfig({ folderName: name })
+      await loadPersistedData()
+      setStep(1)
+    }
+  }
 
   useEffect(() => {
     setIsMounted(true)
