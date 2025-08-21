@@ -34,6 +34,13 @@ interface SubjectMap {
   groups: Group[]
 }
 
+interface PersistedConfig {
+  weeks: { id: string; name: string }[]
+  weekSubjectMaps: Record<string, Record<string, SubjectMap[]>>
+  weekCurrentMapIndex: Record<string, Record<string, number>>
+  palette: string
+}
+
 const INITIAL_SUBJECT_GROUPS: Record<string, Group[]> = {
   algebra: [{ id: "algebra", name: "Álgebra", color: "#3b82f6" }],
   calculo: [{ id: "calculo", name: "Cálculo", color: "#ef4444" }],
@@ -98,6 +105,27 @@ const DEFAULT_WEEKS = [
   { id: "week2", name: "Semana 2" },
 ]
 
+const PALETTES = [
+  { id: "light", bg: "#f9fafb", text: "#111827" },
+  { id: "dim", bg: "#6b7280", text: "#f9fafb" },
+  { id: "dark", bg: "#111827", text: "#f9fafb" },
+]
+
+const createDefaultConfig = (): PersistedConfig => {
+  const weekSubjectMaps: Record<string, Record<string, SubjectMap[]>> = {}
+  const weekCurrentMapIndex: Record<string, Record<string, number>> = {}
+  DEFAULT_WEEKS.forEach((week) => {
+    weekSubjectMaps[week.id] = {}
+    weekCurrentMapIndex[week.id] = {}
+    Object.keys(SUBJECT_DATA).forEach((subjectId) => {
+      const maps = JSON.parse(JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]))
+      weekSubjectMaps[week.id][subjectId] = maps
+      weekCurrentMapIndex[week.id][subjectId] = maps.length - 1
+    })
+  })
+  return { weeks: DEFAULT_WEEKS, weekSubjectMaps, weekCurrentMapIndex, palette: "light" }
+}
+
 export default function NetworkGraph() {
   const svgRef = useRef<SVGSVGElement>(null)
   const [nodes, setNodes] = useState<Node[]>([])
@@ -129,6 +157,9 @@ export default function NetworkGraph() {
     {},
   )
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(true)
+  const [palette, setPalette] = useState("light")
+  const [showPalettes, setShowPalettes] = useState(false)
+  const currentPalette = PALETTES.find((p) => p.id === palette) || PALETTES[0]
 
   const DELETE_DISTANCE = 150
 
@@ -136,10 +167,51 @@ export default function NetworkGraph() {
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
-  const loadPersistedData = useCallback(() => {
+  const persistConfig = useCallback(
+    async (paletteOverride?: string) => {
+      if (!audioLayerRef.current?.hasFolderAccess()) return
+      const cfg: PersistedConfig = {
+        weeks,
+        weekSubjectMaps: weekSubjectMapsRef.current,
+        weekCurrentMapIndex: weekCurrentMapIndexRef.current,
+        palette: paletteOverride ?? palette,
+      }
+      await audioLayerRef.current.writeConfig(cfg)
+    },
+    [weeks, palette],
+  )
+  const selectPalette = (id: string) => {
+    setPalette(id)
+    setShowPalettes(false)
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      persistConfig(id)
+    } else {
+      localStorage.setItem("palette", id)
+    }
+  }
+  const loadPersistedData = useCallback(async () => {
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      const cfg = await audioLayerRef.current.readConfig<PersistedConfig>()
+      if (cfg) {
+        setWeeks(cfg.weeks)
+        weekSubjectMapsRef.current = cfg.weekSubjectMaps || {}
+        weekCurrentMapIndexRef.current = cfg.weekCurrentMapIndex || {}
+        setPalette(cfg.palette || "light")
+      } else {
+        const def = createDefaultConfig()
+        setWeeks(def.weeks)
+        weekSubjectMapsRef.current = def.weekSubjectMaps
+        weekCurrentMapIndexRef.current = def.weekCurrentMapIndex
+        setPalette(def.palette)
+        await audioLayerRef.current.writeConfig(def)
+      }
+      return
+    }
     const storedWeeks = localStorage.getItem("weeks")
     const weeksData = storedWeeks ? JSON.parse(storedWeeks) : DEFAULT_WEEKS
     setWeeks(weeksData)
+    const storedPalette = localStorage.getItem("palette")
+    setPalette(storedPalette || "light")
     weeksData.forEach((week: { id: string; name: string }) => {
       weekSubjectMapsRef.current[week.id] = {}
       weekCurrentMapIndexRef.current[week.id] = {}
@@ -163,7 +235,6 @@ export default function NetworkGraph() {
           groups: m.groups,
         }))
 
-        // Remove maps that have no nodes
         maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
         localStorage.setItem(
           `subjectMaps_${week.id}_${subjectId}`,
@@ -222,6 +293,7 @@ export default function NetworkGraph() {
         ),
       )
     })
+    persistConfig()
   }
 
   const selectWeek = (id: string) => {
@@ -257,7 +329,8 @@ export default function NetworkGraph() {
         weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
       ),
     )
-  }, [selectedWeek, selectedSubject])
+    persistConfig()
+  }, [selectedWeek, selectedSubject, persistConfig])
 
   const selectSubject = (id: string) => {
     if (!selectedWeek) return
@@ -345,7 +418,7 @@ export default function NetworkGraph() {
     const ok = await audioLayerRef.current?.requestFolderPermission()
     setFolderReady(!!ok)
     if (ok) {
-      loadPersistedData()
+      await loadPersistedData()
       setStep(1)
     }
   }
@@ -357,8 +430,9 @@ export default function NetworkGraph() {
   useEffect(() => {
     if (weeks.length) {
       localStorage.setItem("weeks", JSON.stringify(weeks))
+      persistConfig()
     }
-  }, [weeks])
+  }, [weeks, persistConfig])
 
   useEffect(() => {
     if (
@@ -737,6 +811,9 @@ export default function NetworkGraph() {
     })
     audioLayerRef.current = audioLayer
     setFolderReady(audioLayer.hasFolderAccess())
+    if (audioLayer.hasFolderAccess()) {
+      loadPersistedData()
+    }
 
     const labelsGroup = container.append("g").attr("class", "labels")
       const labelElements = labelsGroup
@@ -827,15 +904,28 @@ export default function NetworkGraph() {
         simulationRef.current = null
       }
     }
-  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding])
+  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding, loadPersistedData])
 
   if (!isMounted) {
-    return <div className="w-full h-screen bg-gray-50 dark:bg-gray-900" />
+    return (
+      <div
+        className="w-full h-screen"
+        style={{ backgroundColor: currentPalette.bg }}
+      />
+    )
   }
 
   return (
-    <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
-      <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
+    <div
+      className="w-full h-screen relative overflow-hidden"
+      style={{ backgroundColor: currentPalette.bg, color: currentPalette.text }}
+    >
+      <svg
+        ref={svgRef}
+        width="100%"
+        height="100%"
+        style={{ backgroundColor: currentPalette.bg }}
+      />
       {step > 0 && (
         <Button
           className="absolute top-4 left-4 z-[60]"
@@ -866,6 +956,24 @@ export default function NetworkGraph() {
             <Button onClick={handleFolderClick} className="w-full">
               {folderReady ? "Carpeta lista" : "Cargar carpeta local"}
             </Button>
+            {folderReady && (
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-6 h-6 rounded-full border cursor-pointer"
+                  style={{ backgroundColor: currentPalette.bg }}
+                  onClick={() => setShowPalettes((p) => !p)}
+                />
+                {showPalettes &&
+                  PALETTES.filter((p) => p.id !== palette).map((p) => (
+                    <div
+                      key={p.id}
+                      className="w-6 h-6 rounded-full border cursor-pointer"
+                      style={{ backgroundColor: p.bg }}
+                      onClick={() => selectPalette(p.id)}
+                    />
+                  ))}
+              </div>
+            )}
             {step === 1 && (
               <div className="grid gap-2">
                 {weeks.map((w) => (

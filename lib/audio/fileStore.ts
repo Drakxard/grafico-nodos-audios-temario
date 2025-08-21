@@ -88,18 +88,57 @@ export class FileStore {
   private async openDB(): Promise<IDBDatabase> {
     if (!this.dbPromise) {
       this.dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open('audio-layer', 2);
+        const req = indexedDB.open('audio-layer', 3);
         req.onupgradeneeded = () => {
           const db = req.result;
           if (!db.objectStoreNames.contains('audios')) db.createObjectStore('audios');
           if (!db.objectStoreNames.contains('metadata')) db.createObjectStore('metadata');
           if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
+          if (!db.objectStoreNames.contains('config')) db.createObjectStore('config');
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
       });
     }
     return this.dbPromise;
+  }
+
+  async readConfig<T = any>(): Promise<T | null> {
+    if (this.dirHandle) {
+      try {
+        const dataDir = await this.getDataDir();
+        const file = await dataDir.getFileHandle('config.json');
+        const text = await (await file.getFile()).text();
+        return JSON.parse(text) as T;
+      } catch {
+        return null;
+      }
+    } else {
+      const db = await this.openDB();
+      return new Promise(resolve => {
+        const tx = db.transaction('config');
+        const req = tx.objectStore('config').get('singleton');
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+    }
+  }
+
+  async writeConfig<T = any>(cfg: T): Promise<void> {
+    if (this.dirHandle) {
+      const dataDir = await this.getDataDir();
+      const tmp = await dataDir.getFileHandle('config.tmp.json', { create: true });
+      const writable = await tmp.createWritable();
+      await writable.write(JSON.stringify(cfg));
+      await writable.close();
+      await dataDir.removeEntry?.('config.json').catch(() => {});
+      await tmp.move?.('config.json');
+    } else {
+      const db = await this.openDB();
+      const tx = db.transaction('config', 'readwrite');
+      tx.objectStore('config').put(cfg, 'singleton');
+      await tx.done?.catch(() => {});
+    }
   }
 
   async writeAudio(extId: string, blob: Blob): Promise<void> {
