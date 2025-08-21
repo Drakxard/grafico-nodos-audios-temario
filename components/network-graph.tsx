@@ -1,6 +1,12 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  type DragEvent,
+} from "react"
 import * as d3 from "d3"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -129,6 +135,10 @@ export default function NetworkGraph() {
     {},
   )
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(true)
+
+  const [audioNodeId, setAudioNodeId] = useState<string | null>(null)
+  const [isAudioDialogOpen, setIsAudioDialogOpen] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
 
   const DELETE_DISTANCE = 150
 
@@ -338,6 +348,30 @@ export default function NetworkGraph() {
         options: { allowLocalFileSystem: true, autoSaveMetadata: true },
       })
     }
+  }
+
+  const handleRecordClick = async () => {
+    if (!audioNodeId) return
+    ensureAudioLayer()
+    if (!isRecording) {
+      await audioLayerRef.current?.startRecording(audioNodeId)
+      setIsRecording(true)
+    } else {
+      await audioLayerRef.current?.stopRecording(audioNodeId)
+      setIsRecording(false)
+      setIsAudioDialogOpen(false)
+    }
+  }
+
+  const handleAudioDrop = async (
+    e: DragEvent<HTMLDivElement>,
+  ) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (!file || !audioNodeId) return
+    ensureAudioLayer()
+    await audioLayerRef.current?.upload(audioNodeId, file)
+    setIsAudioDialogOpen(false)
   }
 
   const handleFolderClick = async () => {
@@ -684,6 +718,10 @@ export default function NetworkGraph() {
       .attr("cx", (d) => d.x ?? width / 2)
       .attr("cy", (d) => d.y ?? height / 2)
       .style("cursor", "pointer")
+      .on("click", (_, d) => {
+        setAudioNodeId(d.id)
+        setIsAudioDialogOpen(true)
+      })
 
     nodeElements.call(
       d3
@@ -1032,6 +1070,32 @@ export default function NetworkGraph() {
               >
                 Agregar
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isAudioDialogOpen}
+        onOpenChange={(open) => {
+          setIsAudioDialogOpen(open)
+          if (!open) setIsRecording(false)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Audio del nodo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button className="w-full" onClick={handleRecordClick}>
+              {isRecording ? "Detener" : "Grabar"}
+            </Button>
+            <div
+              onDrop={handleAudioDrop}
+              onDragOver={(e) => e.preventDefault()}
+              className="border-2 border-dashed rounded p-4 text-center"
+            >
+              Arrastra un archivo de audio aquí
             </div>
           </div>
         </DialogContent>
