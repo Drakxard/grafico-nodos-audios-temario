@@ -42,8 +42,8 @@ export class FileStore {
       await this.setupDirectory();
       const db = await this.openDB();
       const tx = db.transaction('handles', 'readwrite');
-      tx.objectStore('handles').put(this.dirHandle, 'dir');
-      await tx.done?.catch(() => {});
+        tx.objectStore('handles').put(this.dirHandle, 'dir');
+        await (tx as any).done?.catch(() => {});
       return true;
     } catch {
       this.dirHandle = null;
@@ -57,10 +57,10 @@ export class FileStore {
 
   private async verifyPermission(handle: FileSystemDirectoryHandle): Promise<boolean> {
     const mode: any = 'readwrite';
-    const perm = await handle.queryPermission?.({ mode });
+    const perm = await (handle as any).queryPermission?.({ mode });
     if (perm === 'granted') return true;
     if (perm === 'prompt') {
-      const res = await handle.requestPermission?.({ mode });
+      const res = await (handle as any).requestPermission?.({ mode });
       return res === 'granted';
     }
     return false;
@@ -77,8 +77,8 @@ export class FileStore {
         try {
           await dataDir.getFileHandle('metadata.json');
         } catch {
-          const file = await dataDir.getFileHandle('metadata.json', { create: true });
-          const writable = await file.createWritable();
+            const file = await dataDir.getFileHandle('metadata.json', { create: true });
+            const writable = await (file as any).createWritable();
           await writable.write(JSON.stringify({ schema_version: 1, nodes: {} }, null, 2));
           await writable.close();
         }
@@ -88,18 +88,56 @@ export class FileStore {
   private async openDB(): Promise<IDBDatabase> {
     if (!this.dbPromise) {
       this.dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open('audio-layer', 2);
+        const req = indexedDB.open('audio-layer', 3);
         req.onupgradeneeded = () => {
           const db = req.result;
           if (!db.objectStoreNames.contains('audios')) db.createObjectStore('audios');
           if (!db.objectStoreNames.contains('metadata')) db.createObjectStore('metadata');
           if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
+          if (!db.objectStoreNames.contains('config')) db.createObjectStore('config');
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
       });
     }
     return this.dbPromise;
+  }
+  async readConfig<T = any>(): Promise<T | null> {
+    if (this.dirHandle) {
+      try {
+        const dataDir = await this.getDataDir();
+        const file = await dataDir.getFileHandle('config.json');
+        const text = await (await file.getFile()).text();
+        return JSON.parse(text) as T;
+      } catch {
+        return null;
+      }
+    } else {
+      const db = await this.openDB();
+      return new Promise(resolve => {
+        const tx = db.transaction('config');
+        const req = tx.objectStore('config').get('singleton');
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+    }
+  }
+
+  async writeConfig<T = any>(cfg: T): Promise<void> {
+    if (this.dirHandle) {
+      const dataDir = await this.getDataDir();
+      const tmp = await dataDir.getFileHandle('config.tmp.json', { create: true });
+      const writable = await (tmp as any).createWritable();
+      await writable.write(JSON.stringify(cfg));
+      await writable.close();
+      await dataDir.removeEntry?.('config.json').catch(() => {});
+      await (tmp as any).move?.('config.json');
+    } else {
+      const db = await this.openDB();
+      const tx = db.transaction('config', 'readwrite');
+      tx.objectStore('config').put(cfg, 'singleton');
+      await (tx as any).done?.catch(() => {});
+    }
   }
 
   async writeAudio(extId: string, blob: Blob, ext = 'webm'): Promise<void> {
@@ -115,6 +153,7 @@ export class FileStore {
       await tx.done?.catch(() => {});
     }
   }
+
 
   async readAudio(extId: string, ext = 'webm'): Promise<Blob | null> {
     if (this.dirHandle) {
@@ -137,20 +176,20 @@ export class FileStore {
   }
 
   async deleteAudio(extId: string, ext = 'webm'): Promise<void> {
-    if (this.dirHandle) {
-      try {
-        const file = await this.getAudioFileHandle(extId, ext, false);
-        await file.remove?.();
-      } catch {
-        /* ignore */
-      }
-    } else {
-      const db = await this.openDB();
-      const tx = db.transaction('audios', 'readwrite');
-      tx.objectStore('audios').delete(extId);
-      await tx.done?.catch(() => {});
-    }
+if (this.dirHandle) {
+  try {
+    const file = await this.getAudioFileHandle(extId, ext, false);
+    await file.remove?.();
+  } catch {
+    /* ignore */
   }
+} else {
+  const db = await this.openDB();
+  const tx = db.transaction('audios', 'readwrite');
+  tx.objectStore('audios').delete(extId);
+  await (tx as any).done?.catch(() => {});
+}
+
 
   async readMeta(): Promise<MetadataFile> {
     if (this.dirHandle) {
@@ -172,17 +211,17 @@ export class FileStore {
   async writeMeta(meta: MetadataFile): Promise<void> {
     if (this.dirHandle) {
       const dataDir = await this.getDataDir();
-      const tmp = await dataDir.getFileHandle('metadata.tmp.json', { create: true });
-      const writable = await tmp.createWritable();
+        const tmp = await dataDir.getFileHandle('metadata.tmp.json', { create: true });
+        const writable = await (tmp as any).createWritable();
       await writable.write(JSON.stringify(meta));
       await writable.close();
-      await dataDir.removeEntry?.('metadata.json').catch(() => {});
-      await tmp.move?.('metadata.json');
+        await dataDir.removeEntry?.('metadata.json').catch(() => {});
+        await (tmp as any).move?.('metadata.json');
     } else {
       const db = await this.openDB();
-      const tx = db.transaction('metadata', 'readwrite');
-      tx.objectStore('metadata').put(meta, 'singleton');
-      await tx.done?.catch(() => {});
+        const tx = db.transaction('metadata', 'readwrite');
+        tx.objectStore('metadata').put(meta, 'singleton');
+        await (tx as any).done?.catch(() => {});
     }
   }
 

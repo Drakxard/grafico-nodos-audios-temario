@@ -7,7 +7,7 @@ import type { AttachAudioLayerOptions, MetadataFile, NodeState } from './types';
 interface AttachParams {
   nodesSelection: Iterable<HTMLElement | SVGElement>;
   getExtId: (el: HTMLElement | SVGElement) => string;
-  rootElement: HTMLElement | SVGElement;
+  rootElement: HTMLElement | SVGElement; // not used here but kept for API parity
   options?: AttachAudioLayerOptions;
 }
 
@@ -25,6 +25,9 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
 
   const loadMetadata = async () => {
     metadata = await store.readMeta();
+    Object.keys(metadata.nodes).forEach((id) => {
+      if (metadata.nodes[id]) updateState(id, 'has-audio');
+    });
   };
 
   const saveMetadata = async () => {
@@ -107,6 +110,29 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
     URL.revokeObjectURL(url);
   };
 
+  const importFile = async (extId: string, file: File) => {
+    try {
+      const nameExt = file.name.split('.').pop()?.toLowerCase();
+      const fallback = file.type.split('/')[1] || 'webm';
+      const ext = nameExt || fallback || 'webm';
+      await store.writeAudio(extId, file, ext);
+      const duration = await getDuration(file);
+      const now = new Date().toISOString();
+      metadata.nodes[extId] = {
+        extId,
+        local_path: `audios/${extId}.${ext}`,
+        duration_seconds: duration,
+        mime: file.type,
+        created_at: now,
+        last_modified: now,
+      };
+      await saveMetadata();
+      updateState(extId, 'has-audio');
+    } catch (e) {
+      options?.onError?.('E_WRITE_FAIL', e);
+    }
+  };
+
   const bind = (el: HTMLElement | SVGElement) => {
     const extId = getExtId(el);
     bindTapAndLongPress(
@@ -125,56 +151,52 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
           await del(extId);
         }
       },
-      options?.longPressMs
+      options?.longPressMs,
     );
 
-    el.addEventListener('dragover', e => {
+    el.addEventListener('dragover', (e) => {
       e.preventDefault();
     });
 
-    el.addEventListener('drop', async e => {
+    el.addEventListener('drop', async (e) => {
       e.preventDefault();
-      const file = e.dataTransfer?.files?.[0];
+      const file = (e as DragEvent).dataTransfer?.files?.[0];
       if (!file) return;
-      try {
-        const ext = file.name.split('.').pop()?.toLowerCase() || 'webm';
-        await store.writeAudio(extId, file, ext);
-        const duration = await getDuration(file);
-        const now = new Date().toISOString();
-        metadata.nodes[extId] = {
-          extId,
-          local_path: `audios/${extId}.${ext}`,
-          duration_seconds: duration,
-          mime: file.type,
-          created_at: now,
-          last_modified: now,
-        };
-        await saveMetadata();
-        updateState(extId, 'has-audio');
-      } catch (err) {
-        options?.onError?.('E_WRITE_FAIL', err);
-      }
+      await importFile(extId, file);
     });
   };
 
   for (const el of nodesSelection) bind(el);
-  const ready = store.init().then(loadMetadata).then(() => store.hasAccess());
+  const ready = store
+    .init()
+    .then(loadMetadata)
+    .then(() => store.hasAccess());
 
   return {
     ready,
     requestFolderPermission: async () => {
       const ok = await store.requestFolderPermission();
-      if (ok) metadata = await store.readMeta();
+      if (ok) {
+        metadata = await store.readMeta();
+        Object.keys(metadata.nodes).forEach((id) => {
+          if (metadata.nodes[id]) updateState(id, 'has-audio');
+        });
+      }
       return ok;
     },
     hasFolderAccess: () => store.hasAccess(),
+    // Exponer ambas APIs: config y nombre de carpeta
+    readConfig: <T>() => store.readConfig<T>(),
+    writeConfig: <T>(cfg: T) => store.writeConfig(cfg),
     getFolderName: () => store.getDirName(),
+
     startRecording,
     stopRecording,
     play,
     pause,
     delete: del,
     download,
+    importFile,
     dispose: () => {
       state.clear();
     },
@@ -182,7 +204,7 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
 }
 
 async function getDuration(blob: Blob): Promise<number> {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const audio = document.createElement('audio');
     audio.src = URL.createObjectURL(blob);
     audio.onloadedmetadata = () => {

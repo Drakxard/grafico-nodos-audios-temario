@@ -18,14 +18,15 @@ export class Recorder {
     if (!this.mediaRecorder) {
       throw new Error('E_BUSY');
     }
-    return new Promise(resolve => {
-      this.mediaRecorder!.addEventListener('stop', () => {
-        const blob = new Blob(this.chunks, { type: this.mime });
-        this.mediaRecorder?.stream.getTracks().forEach(t => t.stop());
-        this.mediaRecorder = undefined;
-        resolve(blob);
+      const recorder = this.mediaRecorder;
+      return new Promise(resolve => {
+        recorder!.addEventListener('stop', () => {
+          const blob = new Blob(this.chunks, { type: this.mime });
+          recorder!.stream.getTracks().forEach(t => t.stop());
+          this.mediaRecorder = undefined;
+          resolve(blob);
+        });
+        recorder!.stop();
       });
-      this.mediaRecorder.stop();
-    });
   }
 }

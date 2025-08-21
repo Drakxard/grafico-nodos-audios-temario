@@ -7,20 +7,23 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
+import { useTheme } from "next-themes"
 import { loadConfig, saveConfig } from "@/lib/config"
 
-interface Node extends d3.SimulationNodeDatum {
+interface GraphNode extends d3.SimulationNodeDatum {
   id: string
   name: string
   group: string
   color: string
   startX?: number
   startY?: number
+  x?: number
+  y?: number
 }
 
-interface Link extends d3.SimulationLinkDatum<Node> {
-  source: string | Node
-  target: string | Node
+interface Link extends d3.SimulationLinkDatum<GraphNode> {
+  source: string | GraphNode
+  target: string | GraphNode
 }
 
 interface Group {
@@ -30,9 +33,16 @@ interface Group {
 }
 
 interface SubjectMap {
-  nodes: Node[]
+  nodes: GraphNode[]
   links: Link[]
   groups: Group[]
+}
+
+interface PersistedConfig {
+  weeks: { id: string; name: string }[]
+  weekSubjectMaps: Record<string, Record<string, SubjectMap[]>>
+  weekCurrentMapIndex: Record<string, Record<string, number>>
+  theme: string
 }
 
 const INITIAL_SUBJECT_GROUPS: Record<string, Group[]> = {
@@ -99,9 +109,24 @@ const DEFAULT_WEEKS = [
   { id: "week2", name: "Semana 2" },
 ]
 
+const createDefaultConfig = (): PersistedConfig => {
+  const weekSubjectMaps: Record<string, Record<string, SubjectMap[]>> = {}
+  const weekCurrentMapIndex: Record<string, Record<string, number>> = {}
+  DEFAULT_WEEKS.forEach((week) => {
+    weekSubjectMaps[week.id] = {}
+    weekCurrentMapIndex[week.id] = {}
+    Object.keys(SUBJECT_DATA).forEach((subjectId) => {
+      const maps = JSON.parse(JSON.stringify(INITIAL_SUBJECT_MAPS[subjectId]))
+      weekSubjectMaps[week.id][subjectId] = maps
+      weekCurrentMapIndex[week.id][subjectId] = maps.length - 1
+    })
+  })
+  return { weeks: DEFAULT_WEEKS, weekSubjectMaps, weekCurrentMapIndex, theme: 'light' }
+}
+
 export default function NetworkGraph() {
   const svgRef = useRef<SVGSVGElement>(null)
-  const [nodes, setNodes] = useState<Node[]>([])
+  const [nodes, setNodes] = useState<GraphNode[]>([])
   const [links, setLinks] = useState<Link[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [currentGroup, setCurrentGroup] = useState<string>("")
@@ -131,17 +156,55 @@ export default function NetworkGraph() {
     {},
   )
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(true)
+  const { theme, setTheme } = useTheme()
+  const [showThemePicker, setShowThemePicker] = useState(false)
+  const themeOptions = [
+    { id: 'light', color: '#f8fafc' },
+    { id: 'dark', color: '#0f172a' },
+    { id: 'blue', color: '#1e3a8a' },
+    { id: 'emerald', color: '#064e3b' },
+    { id: 'rose', color: '#881337' },
+  ]
 
   const DELETE_DISTANCE = 150
 
-  const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null)
+  const simulationRef = useRef<d3.Simulation<GraphNode, Link> | null>(null)
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
-  const loadPersistedData = useCallback(() => {
+  const persistConfig = useCallback(async () => {
+    if (!audioLayerRef.current?.hasFolderAccess()) return
+    const cfg: PersistedConfig = {
+      weeks,
+      weekSubjectMaps: weekSubjectMapsRef.current,
+      weekCurrentMapIndex: weekCurrentMapIndexRef.current,
+      theme: theme || 'light',
+    }
+    await audioLayerRef.current.writeConfig(cfg)
+  }, [weeks, theme])
+  const loadPersistedData = useCallback(async () => {
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      const cfg = await audioLayerRef.current.readConfig<PersistedConfig>()
+      if (cfg) {
+        setWeeks(cfg.weeks)
+        weekSubjectMapsRef.current = cfg.weekSubjectMaps || {}
+        weekCurrentMapIndexRef.current = cfg.weekCurrentMapIndex || {}
+        if (cfg.theme) setTheme(cfg.theme)
+      } else {
+        const def = createDefaultConfig()
+        setWeeks(def.weeks)
+        weekSubjectMapsRef.current = def.weekSubjectMaps
+        weekCurrentMapIndexRef.current = def.weekCurrentMapIndex
+        await audioLayerRef.current.writeConfig(def)
+        setTheme(def.theme)
+      }
+      return
+    }
     const storedWeeks = localStorage.getItem("weeks")
     const weeksData = storedWeeks ? JSON.parse(storedWeeks) : DEFAULT_WEEKS
     setWeeks(weeksData)
+    const storedTheme = localStorage.getItem('theme') || 'light'
+    setTheme(storedTheme)
     weeksData.forEach((week: { id: string; name: string }) => {
       weekSubjectMapsRef.current[week.id] = {}
       weekCurrentMapIndexRef.current[week.id] = {}
@@ -165,7 +228,6 @@ export default function NetworkGraph() {
           groups: m.groups,
         }))
 
-        // Remove maps that have no nodes
         maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
         localStorage.setItem(
           `subjectMaps_${week.id}_${subjectId}`,
@@ -224,6 +286,7 @@ export default function NetworkGraph() {
         ),
       )
     })
+    persistConfig()
   }
 
   const selectWeek = (id: string) => {
@@ -259,7 +322,8 @@ export default function NetworkGraph() {
         weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
       ),
     )
-  }, [selectedWeek, selectedSubject])
+    persistConfig()
+  }, [selectedWeek, selectedSubject, persistConfig])
 
   const selectSubject = (id: string) => {
     if (!selectedWeek) return
@@ -357,14 +421,14 @@ export default function NetworkGraph() {
     await ensureAudioLayer()
     const ok = await audioLayerRef.current?.requestFolderPermission()
     setFolderReady(!!ok)
-    if (ok) {
-      const name = audioLayerRef.current?.getFolderName() || ""
-      setFolderName(name)
-      saveConfig({ folderName: name })
-      loadPersistedData()
-      setStep(1)
-    }
-  }
+if (ok) {
+  const name = audioLayerRef.current?.getFolderName() || ""
+  setFolderName(name)
+  saveConfig({ folderName: name })
+  await loadPersistedData()
+  setStep(1)
+}
+
 
   useEffect(() => {
     setIsMounted(true)
@@ -381,8 +445,17 @@ export default function NetworkGraph() {
   useEffect(() => {
     if (weeks.length) {
       localStorage.setItem("weeks", JSON.stringify(weeks))
+      persistConfig()
     }
-  }, [weeks])
+  }, [weeks, persistConfig])
+
+  useEffect(() => {
+    if (!theme) return
+    localStorage.setItem('theme', theme)
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      persistConfig()
+    }
+  }, [theme, persistConfig])
 
   useEffect(() => {
     if (
@@ -535,7 +608,7 @@ export default function NetworkGraph() {
     const groupData = groups.find((g) => g.id === currentGroup)
     if (!groupData) return
 
-    const newNode: Node = {
+    const newNode: GraphNode = {
       id: Date.now().toString(),
       name: newNodeName.trim(),
       group: currentGroup,
@@ -661,7 +734,7 @@ export default function NetworkGraph() {
       .force(
         "link",
         d3
-          .forceLink<Node, Link>(linksCopy)
+          .forceLink<GraphNode, Link>(linksCopy)
           .id((d) => d.id)
           .distance(100)
           .strength(0.5),
@@ -711,15 +784,15 @@ export default function NetworkGraph() {
 
     nodeElements.call(
       d3
-        .drag<SVGCircleElement, Node>()
-        .on("start", function (event, d) {
+        .drag<SVGCircleElement, GraphNode>()
+        .on("start", function (this: SVGCircleElement, event: any, d: GraphNode) {
           if (!event.active && simulation) simulation.alphaTarget(0.3).restart()
           d.fx = d.x
           d.fy = d.y
           d.startX = d.x
           d.startY = d.y
         })
-        .on("drag", function (event, d) {
+        .on("drag", function (this: SVGCircleElement, event: any, d: GraphNode) {
           d.fx = event.x
           d.fy = event.y
           const dx = event.x - (d.startX ?? 0)
@@ -729,7 +802,7 @@ export default function NetworkGraph() {
           const newColor = d3.interpolateRgb(d.color, "#ff0000")(progress)
           d3.select(this).attr("fill", newColor)
         })
-        .on("end", function (event, d) {
+        .on("end", function (this: SVGCircleElement, event: any, d: GraphNode) {
           if (!event.active && simulation) simulation.alphaTarget(0)
           d.fx = null
           d.fy = null
@@ -759,15 +832,17 @@ export default function NetworkGraph() {
       rootElement: svgElement,
       options: { allowLocalFileSystem: true, autoSaveMetadata: true },
     })
-    audioLayerRef.current = audioLayer
-    audioLayer.ready.then((has) => {
-      setFolderReady(has)
-      if (has) {
-        const name = audioLayer.getFolderName() || ""
-        setFolderName(name)
-        saveConfig({ folderName: name })
-      }
-    })
+audioLayerRef.current = audioLayer
+audioLayer.ready.then((has) => {
+  setFolderReady(has)
+  if (has) {
+    const name = audioLayer.getFolderName() || ""
+    setFolderName(name)
+    saveConfig({ folderName: name })
+    loadPersistedData()
+  }
+})
+
 
     const labelsGroup = container.append("g").attr("class", "labels")
       const labelElements = labelsGroup
@@ -779,7 +854,7 @@ export default function NetworkGraph() {
         .attr("font-size", 12)
         .attr("font-family", "sans-serif")
         .attr("text-anchor", "middle")
-        .attr("fill", (d) => d.color)
+        .style("fill", "var(--foreground)")
         .attr("pointer-events", "none")
 
     simulation.on("tick", () => {
@@ -817,28 +892,30 @@ export default function NetworkGraph() {
 
       try {
         linkElements
-          .attr("x1", (d) => {
-            const source = d.source as Node
+          .attr("x1", (d: any) => {
+            const source = d.source as GraphNode
             return source.x || 0
           })
-          .attr("y1", (d) => {
-            const source = d.source as Node
+          .attr("y1", (d: any) => {
+            const source = d.source as GraphNode
             return source.y || 0
           })
-          .attr("x2", (d) => {
-            const target = d.target as Node
+          .attr("x2", (d: any) => {
+            const target = d.target as GraphNode
             return target.x || 0
           })
-          .attr("y2", (d) => {
-            const target = d.target as Node
+          .attr("y2", (d: any) => {
+            const target = d.target as GraphNode
             return target.y || 0
           })
 
-          nodeElements.attr("cx", (d) => d.x || 0).attr("cy", (d) => d.y || 0)
+          nodeElements
+            .attr("cx", (d: any) => d.x || 0)
+            .attr("cy", (d: any) => d.y || 0)
 
           labelElements
-            .attr("x", (d) => d.x || 0)
-            .attr("y", (d) => (d.y || 0) + 30)
+            .attr("x", (d: any) => d.x || 0)
+            .attr("y", (d: any) => (d.y || 0) + 30)
       } catch (error) {
         console.log("[v0] Error during tick update, stopping simulation:", error)
         simulation.stop()
@@ -858,15 +935,15 @@ export default function NetworkGraph() {
         simulationRef.current = null
       }
     }
-  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding])
+  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding, loadPersistedData])
 
   if (!isMounted) {
-    return <div className="w-full h-screen bg-gray-50 dark:bg-gray-900" />
+    return <div className="w-full h-screen bg-background" />
   }
 
   return (
-    <div className="w-full h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
-      <svg ref={svgRef} width="100%" height="100%" className="bg-gray-50 dark:bg-gray-900" />
+    <div className="w-full h-screen bg-background text-foreground relative overflow-hidden">
+      <svg ref={svgRef} width="100%" height="100%" className="bg-background" />
       {step > 0 && (
         <Button
           className="absolute top-4 left-4 z-[60]"
@@ -875,6 +952,30 @@ export default function NetworkGraph() {
         >
           ←
         </Button>
+      )}
+      {folderReady && (
+        <div className="absolute top-4 right-4 z-[60]">
+          <button
+            className="w-8 h-8 rounded-full border"
+            style={{ backgroundColor: themeOptions.find(t => t.id === theme)?.color }}
+            onClick={() => setShowThemePicker(p => !p)}
+          />
+          {showThemePicker && (
+            <div className="absolute mt-2 right-0 flex flex-col gap-2">
+              {themeOptions.filter(t => t.id !== theme).map(t => (
+                <button
+                  key={t.id}
+                  className="w-8 h-8 rounded-full border"
+                  style={{ backgroundColor: t.color }}
+                  onClick={() => {
+                    setTheme(t.id)
+                    setShowThemePicker(false)
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
