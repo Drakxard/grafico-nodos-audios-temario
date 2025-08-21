@@ -88,12 +88,13 @@ export class FileStore {
   private async openDB(): Promise<IDBDatabase> {
     if (!this.dbPromise) {
       this.dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open('audio-layer', 2);
+        const req = indexedDB.open('audio-layer', 3);
         req.onupgradeneeded = () => {
           const db = req.result;
           if (!db.objectStoreNames.contains('audios')) db.createObjectStore('audios');
           if (!db.objectStoreNames.contains('metadata')) db.createObjectStore('metadata');
           if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
+          if (!db.objectStoreNames.contains('data')) db.createObjectStore('data');
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -182,6 +183,42 @@ export class FileStore {
       const db = await this.openDB();
       const tx = db.transaction('metadata', 'readwrite');
       tx.objectStore('metadata').put(meta, 'singleton');
+      await tx.done?.catch(() => {});
+    }
+  }
+
+  async readJson(name: string): Promise<any> {
+    if (this.dirHandle) {
+      try {
+        const dataDir = await this.getDataDir();
+        const file = await dataDir.getFileHandle(`${name}.json`);
+        const text = await (await file.getFile()).text();
+        return JSON.parse(text);
+      } catch {
+        return null;
+      }
+    } else {
+      const db = await this.openDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction('data');
+        const req = tx.objectStore('data').get(name);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+    }
+  }
+
+  async writeJson(name: string, data: any): Promise<void> {
+    if (this.dirHandle) {
+      const dataDir = await this.getDataDir();
+      const file = await dataDir.getFileHandle(`${name}.json`, { create: true });
+      const writable = await file.createWritable();
+      await writable.write(JSON.stringify(data));
+      await writable.close();
+    } else {
+      const db = await this.openDB();
+      const tx = db.transaction('data', 'readwrite');
+      tx.objectStore('data').put(data, name);
       await tx.done?.catch(() => {});
     }
   }

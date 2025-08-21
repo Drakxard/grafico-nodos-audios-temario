@@ -24,6 +24,7 @@ export interface AttachAudioLayerOptions {
   allowLocalFileSystem?: boolean;
   autoSaveMetadata?: boolean;
   longPressMs?: number;
+  bindGestures?: boolean;
   onStateChange?: (extId: string, state: NodeState) => void;
   onError?: (code: string, ctx?: unknown) => void;
 }
