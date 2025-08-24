@@ -640,16 +640,23 @@ const handleFolderClick = async () => {
     setShowAllGroups(false)
     setNewNodePos(null)
 
-    if (selectedWeek && selectedSubject && isAwaitingMap) {
+    if (selectedWeek && selectedSubject) {
       const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
-      maps.push({ nodes: updatedNodes, links: updatedLinks, groups })
-      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] =
-        maps.length - 1
-      setCurrentMapIndex((prev) => ({
-        ...prev,
-        [selectedSubject]: maps.length - 1,
-      }))
-      setIsAwaitingMap(false)
+      if (isAwaitingMap) {
+        maps.push({ nodes: updatedNodes, links: updatedLinks, groups })
+        weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] =
+          maps.length - 1
+        setCurrentMapIndex((prev) => ({
+          ...prev,
+          [selectedSubject]: maps.length - 1,
+        }))
+        setIsAwaitingMap(false)
+      } else {
+        const idx = currentMapIndex[selectedSubject]
+        if (maps[idx]) {
+          maps[idx] = { nodes: updatedNodes, links: updatedLinks, groups }
+        }
+      }
       saveCurrentSubjectData()
     }
   }, [
@@ -662,6 +669,7 @@ const handleFolderClick = async () => {
     selectedWeek,
     selectedSubject,
     isAwaitingMap,
+    currentMapIndex,
     saveCurrentSubjectData,
   ])
 
