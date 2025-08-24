@@ -856,7 +856,21 @@ const handleFolderClick = async () => {
       nodesSelection: nodeElements.nodes(),
       getExtId: (el) => (el as any).__data__.id,
       rootElement: svgElement,
-      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      options: {
+        allowLocalFileSystem: true,
+        autoSaveMetadata: true,
+        // Surface audio layer errors to the user. In particular we notify
+        // when a recording could not be persisted after stopping.
+        onError: (code) => {
+          if (code === 'E_WRITE_VERIFY_FAIL') {
+            alert(
+              'No se pudo guardar el audio. Verifica los permisos de la carpeta.'
+            )
+          } else {
+            alert(`Error de audio: ${code}`)
+          }
+        },
+      },
     })
 audioLayerRef.current = audioLayer
 audioLayer.ready.then((has) => {
