@@ -49,6 +49,17 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
     try {
       const blob = await recorder.stop();
       await store.writeAudio(extId, blob, 'webm');
+      // Verify that the file was actually persisted. On some devices
+      // (notably mobile browsers) a user may grant a folder permission but
+      // the write can still silently fail. We immediately try to read the
+      // file back and if it is missing we surface an error so the caller can
+      // notify the user.
+      const verify = await store.readAudio(extId, 'webm');
+      if (!verify) {
+        options?.onError?.('E_WRITE_VERIFY_FAIL');
+        updateState(extId, 'error');
+        return;
+      }
       const duration = await getDuration(blob);
       const now = new Date().toISOString();
       metadata.nodes[extId] = {
