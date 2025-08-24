@@ -167,11 +167,39 @@ export class FileStore {
       const writable = await file.createWritable();
       await writable.write(blob);
       await writable.close();
+      // Immediately verify the file was written. Some environments may
+      // silently reject writes after the user denies access, which would
+      // leave the recording without persistence.
+      try {
+        await file.getFile();
+      } catch {
+        throw new Error('FILE_WRITE_FAILED');
+      }
     } else {
       const db = await this.openDB();
       const tx = db.transaction('audios', 'readwrite');
       tx.objectStore('audios').put({ blob, mime: blob.type, ext }, extId);
       await tx.done?.catch(() => {});
+    }
+  }
+
+  async audioExists(extId: string, ext = 'webm'): Promise<boolean> {
+    if (this.dirHandle) {
+      try {
+        const file = await this.getAudioFileHandle(extId, ext, false);
+        await file.getFile();
+        return true;
+      } catch {
+        return false;
+      }
+    } else {
+      const db = await this.openDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction('audios');
+        const req = tx.objectStore('audios').get(extId);
+        req.onsuccess = () => resolve(!!req.result);
+        req.onerror = () => resolve(false);
+      });
     }
   }
 

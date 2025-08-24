@@ -49,6 +49,11 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
     try {
       const blob = await recorder.stop();
       await store.writeAudio(extId, blob, 'webm');
+      // Verify the recording was actually persisted to the chosen folder.
+      // Some mobile browsers may report success but skip the write if the
+      // user revoked permissions.
+      const exists = await store.audioExists(extId, 'webm');
+      if (!exists) throw new Error('missing');
       const duration = await getDuration(blob);
       const now = new Date().toISOString();
       metadata.nodes[extId] = {
@@ -63,6 +68,7 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
       updateState(extId, 'has-audio');
     } catch (e) {
       options?.onError?.('E_WRITE_FAIL', e);
+      updateState(extId, 'idle');
     }
   };
 
