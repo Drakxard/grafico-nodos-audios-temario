@@ -38,17 +38,23 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
 
   const startRecording = async (extId: string) => {
     try {
+      console.log('#graba')
       await recorder.start();
       updateState(extId, 'recording');
     } catch (e) {
+      console.error('#error', e)
       options?.onError?.('E_MIC_DENIED', e);
     }
   };
 
   const stopRecording = async (extId: string) => {
     try {
+      console.log('#corta grabacion')
       const blob = await recorder.stop();
+      console.log('#intentando guardar')
       await store.writeAudio(extId, blob, 'webm');
+      const path = store.getAudioPath(extId, 'webm');
+      console.log(`#guardado en ${path}`);
       const duration = await getDuration(blob);
       const now = new Date().toISOString();
       metadata.nodes[extId] = {
@@ -62,6 +68,7 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
       await saveMetadata();
       updateState(extId, 'has-audio');
     } catch (e) {
+      console.error('#error', e)
       options?.onError?.('E_WRITE_FAIL', e);
     }
   };
