@@ -137,6 +137,9 @@ export default function NetworkGraph() {
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
   const [isMapDialogOpen, setIsMapDialogOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
+  const [newNodePos, setNewNodePos] = useState<{ x: number; y: number } | null>(
+    null,
+  )
   const [nodePadding, setNodePadding] = useState(35)
   const [isAwaitingMap, setIsAwaitingMap] = useState(false)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
@@ -368,7 +371,6 @@ export default function NetworkGraph() {
       setSelectedWeek(null)
       setStep(1)
     } else if (step === 1) {
-      setFolderReady(false)
       setSelectedWeek(null)
       setSelectedSubject(null)
       setStep(0)
@@ -426,8 +428,11 @@ const handleFolderClick = async () => {
       setFolderName(name)
       saveConfig({ folderName: name })
       await loadPersistedData()
-      setStep(1)
     }
+  }
+
+  const handleContinue = () => {
+    if (folderReady) setStep(1)
   }
 
   useEffect(() => {
@@ -437,7 +442,6 @@ const handleFolderClick = async () => {
     ensureAudioLayer().then((has) => {
       if (has) {
         loadPersistedData()
-        setStep(1)
       }
     })
   }, [ensureAudioLayer, loadPersistedData])
@@ -615,7 +619,10 @@ const handleFolderClick = async () => {
       color: groupData.color,
     }
 
-    if (nodes.length === 0) {
+    if (newNodePos) {
+      newNode.x = newNodePos.x
+      newNode.y = newNodePos.y
+    } else if (nodes.length === 0) {
       const width = window.innerWidth
       const height = window.innerHeight
       newNode.x = width / 2
@@ -631,6 +638,7 @@ const handleFolderClick = async () => {
     setNewNodeName("")
     setIsDialogOpen(false)
     setShowAllGroups(false)
+    setNewNodePos(null)
 
     if (selectedWeek && selectedSubject && isAwaitingMap) {
       const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
@@ -650,6 +658,7 @@ const handleFolderClick = async () => {
     groups,
     nodes,
     links,
+    newNodePos,
     selectedWeek,
     selectedSubject,
     isAwaitingMap,
@@ -757,6 +766,15 @@ const handleFolderClick = async () => {
       })
 
     svg.call(zoom)
+    svg.on("dblclick.zoom", null)
+    svg.on("dblclick", (event) => {
+      const point = d3.pointer(event)
+      const transform = d3.zoomTransform(svgElement)
+      const x = (point[0] - transform.x) / transform.k
+      const y = (point[1] - transform.y) / transform.k
+      setNewNodePos({ x, y })
+      setIsDialogOpen(true)
+    })
 
     const linksGroup = container.append("g").attr("class", "links")
     const linkElements = linksGroup
@@ -978,6 +996,12 @@ audioLayer.ready.then((has) => {
         </div>
       )}
 
+      {step === 3 && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[50] text-sm text-center bg-background/80 px-2 py-1 rounded">
+          Doble pulsación para agregar nodos, pellizca para hacer zoom
+        </div>
+      )}
+
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
         <DialogContent>
           <DialogHeader className="flex items-center gap-2">
@@ -1001,6 +1025,15 @@ audioLayer.ready.then((has) => {
             <Button onClick={handleFolderClick} className="w-full">
               {folderReady ? "Cambiar carpeta" : "Seleccionar carpeta local"}
             </Button>
+            {step === 0 && (
+              <Button
+                onClick={handleContinue}
+                className="w-full"
+                disabled={!folderReady}
+              >
+                Continuar
+              </Button>
+            )}
             {step === 1 && (
               <div className="grid gap-2">
                 {weeks.map((w) => (
