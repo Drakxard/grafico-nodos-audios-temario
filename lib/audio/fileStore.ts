@@ -77,9 +77,25 @@ export class FileStore {
         try {
           await dataDir.getFileHandle('metadata.json');
         } catch {
-            const file = await dataDir.getFileHandle('metadata.json', { create: true });
-            const writable = await (file as any).createWritable();
-          await writable.write(JSON.stringify({ schema_version: 1, nodes: {} }, null, 2));
+          const file = await dataDir.getFileHandle('metadata.json', { create: true });
+          const writable = await (file as any).createWritable();
+          await writable.write(
+            JSON.stringify({ schema_version: 1, nodes: {} }, null, 2),
+          );
+          await writable.close();
+        }
+        try {
+          await dataDir.getFileHandle('config.json');
+        } catch {
+          const file = await dataDir.getFileHandle('config.json', { create: true });
+          const writable = await (file as any).createWritable();
+          await writable.write(
+            JSON.stringify(
+              { weeks: [], weekSubjectMaps: {}, weekCurrentMapIndex: {}, theme: 'light' },
+              null,
+              2,
+            ),
+          );
           await writable.close();
         }
       });
@@ -110,6 +126,15 @@ export class FileStore {
         const text = await (await file.getFile()).text();
         return JSON.parse(text) as T;
       } catch {
+        try {
+          const dataDir = await this.getDataDir();
+          const file = await dataDir.getFileHandle('config.json', { create: true });
+          const writable = await file.createWritable();
+          await writable.write('{}');
+          await writable.close();
+        } catch {
+          /* ignore */
+        }
         return null;
       }
     } else {
@@ -126,12 +151,10 @@ export class FileStore {
   async writeConfig<T = any>(cfg: T): Promise<void> {
     if (this.dirHandle) {
       const dataDir = await this.getDataDir();
-      const tmp = await dataDir.getFileHandle('config.tmp.json', { create: true });
-      const writable = await (tmp as any).createWritable();
+      const file = await dataDir.getFileHandle('config.json', { create: true });
+      const writable = await file.createWritable();
       await writable.write(JSON.stringify(cfg));
       await writable.close();
-      await dataDir.removeEntry?.('config.json').catch(() => {});
-      await (tmp as any).move?.('config.json');
     } else {
       const db = await this.openDB();
       const tx = db.transaction('config', 'readwrite');
@@ -193,10 +216,24 @@ export class FileStore {
 
   async readMeta(): Promise<MetadataFile> {
     if (this.dirHandle) {
-      const dataDir = await this.getDataDir();
-      const file = await dataDir.getFileHandle('metadata.json');
-      const text = await (await file.getFile()).text();
-      return JSON.parse(text) as MetadataFile;
+      try {
+        const dataDir = await this.getDataDir();
+        const file = await dataDir.getFileHandle('metadata.json');
+        const text = await (await file.getFile()).text();
+        return JSON.parse(text) as MetadataFile;
+      } catch {
+        const def = { schema_version: 1, nodes: {} };
+        try {
+          const dataDir = await this.getDataDir();
+          const file = await dataDir.getFileHandle('metadata.json', { create: true });
+          const writable = await file.createWritable();
+          await writable.write(JSON.stringify(def));
+          await writable.close();
+        } catch {
+          /* ignore */
+        }
+        return def;
+      }
     } else {
       const db = await this.openDB();
       return new Promise((resolve) => {
@@ -211,17 +248,15 @@ export class FileStore {
   async writeMeta(meta: MetadataFile): Promise<void> {
     if (this.dirHandle) {
       const dataDir = await this.getDataDir();
-        const tmp = await dataDir.getFileHandle('metadata.tmp.json', { create: true });
-        const writable = await (tmp as any).createWritable();
+      const file = await dataDir.getFileHandle('metadata.json', { create: true });
+      const writable = await file.createWritable();
       await writable.write(JSON.stringify(meta));
       await writable.close();
-        await dataDir.removeEntry?.('metadata.json').catch(() => {});
-        await (tmp as any).move?.('metadata.json');
     } else {
       const db = await this.openDB();
-        const tx = db.transaction('metadata', 'readwrite');
-        tx.objectStore('metadata').put(meta, 'singleton');
-        await (tx as any).done?.catch(() => {});
+      const tx = db.transaction('metadata', 'readwrite');
+      tx.objectStore('metadata').put(meta, 'singleton');
+      await (tx as any).done?.catch(() => {});
     }
   }
 
