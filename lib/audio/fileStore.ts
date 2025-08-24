@@ -77,9 +77,19 @@ export class FileStore {
         try {
           await dataDir.getFileHandle('metadata.json');
         } catch {
-            const file = await dataDir.getFileHandle('metadata.json', { create: true });
-            const writable = await (file as any).createWritable();
-          await writable.write(JSON.stringify({ schema_version: 1, nodes: {} }, null, 2));
+          const file = await dataDir.getFileHandle('metadata.json', { create: true });
+          const writable = await (file as any).createWritable();
+          await writable.write(
+            JSON.stringify({ schema_version: 1, nodes: {} }, null, 2),
+          );
+          await writable.close();
+        }
+        try {
+          await dataDir.getFileHandle('config.json');
+        } catch {
+          const file = await dataDir.getFileHandle('config.json', { create: true });
+          const writable = await (file as any).createWritable();
+          await writable.write('null');
           await writable.close();
         }
       });
