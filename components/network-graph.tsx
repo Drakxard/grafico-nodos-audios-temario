@@ -231,23 +231,31 @@ export default function NetworkGraph() {
           groups: m.groups,
         }))
 
-        maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
+        const storedGroups =
+          localStorage.getItem(`subjectGroups_${week.id}_${subjectId}`) || null
+        const groups = storedGroups
+          ? JSON.parse(storedGroups)
+          : JSON.parse(JSON.stringify(INITIAL_SUBJECT_GROUPS[subjectId]))
+
+        if (!maps.length) {
+          maps = [
+            {
+              nodes: [],
+              links: [],
+              groups: JSON.parse(JSON.stringify(groups)),
+            },
+          ]
+        } else {
+          maps = maps.map((m: any) => ({
+            ...m,
+            groups: m.groups || JSON.parse(JSON.stringify(groups)),
+          }))
+        }
+
         localStorage.setItem(
           `subjectMaps_${week.id}_${subjectId}`,
           JSON.stringify(maps),
         )
-
-        if (!maps.some((m: any) => m.groups)) {
-          const storedGroups =
-            localStorage.getItem(`subjectGroups_${week.id}_${subjectId}`) || null
-          const groups = storedGroups
-            ? JSON.parse(storedGroups)
-            : JSON.parse(JSON.stringify(INITIAL_SUBJECT_GROUPS[subjectId]))
-          maps = maps.map((m: any) => ({
-            ...m,
-            groups: JSON.parse(JSON.stringify(groups)),
-          }))
-        }
 
         weekSubjectMapsRef.current[week.id][subjectId] = maps
 
@@ -484,23 +492,22 @@ const handleFolderClick = async () => {
     }))
     maps[idx].groups = groups
     if (nodes.length === 0) {
-      maps.splice(idx, 1)
-      const newIdx = idx > 0 ? idx - 1 : 0
-      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIdx
-      setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIdx }))
-      if (maps[newIdx]) {
-        setNodes(maps[newIdx].nodes)
-        setLinks(maps[newIdx].links)
-        setGroups(maps[newIdx].groups)
-        setCurrentGroup(maps[newIdx].groups[0]?.id || "")
+      if (maps.length > 1) {
+        maps.splice(idx, 1)
+        const newIdx = idx > 0 ? idx - 1 : 0
+        weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIdx
+        setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIdx }))
+        if (maps[newIdx]) {
+          setNodes(maps[newIdx].nodes)
+          setLinks(maps[newIdx].links)
+          setGroups(maps[newIdx].groups)
+          setCurrentGroup(maps[newIdx].groups[0]?.id || "")
+        }
       } else {
-        const defaultGroups = JSON.parse(
-          JSON.stringify(INITIAL_SUBJECT_GROUPS[selectedSubject] || []),
-        )
-        setGroups(defaultGroups)
-        setCurrentGroup(defaultGroups[0]?.id || "")
-        setIsAwaitingMap(true)
+        maps[idx] = { nodes: [], links: [], groups }
       }
+      saveCurrentSubjectData()
+      return
     }
     saveCurrentSubjectData()
   }, [
