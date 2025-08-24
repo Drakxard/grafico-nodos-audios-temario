@@ -485,22 +485,33 @@ const handleFolderClick = async () => {
     maps[idx].groups = groups
     if (nodes.length === 0) {
       maps.splice(idx, 1)
-      const newIdx = idx > 0 ? idx - 1 : 0
-      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIdx
-      setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIdx }))
-      if (maps[newIdx]) {
-        setNodes(maps[newIdx].nodes)
-        setLinks(maps[newIdx].links)
-        setGroups(maps[newIdx].groups)
-        setCurrentGroup(maps[newIdx].groups[0]?.id || "")
-      } else {
+      if (maps.length === 0) {
+        weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = 0
+        setCurrentMapIndex((prev) => {
+          const { [selectedSubject]: _removed, ...rest } = prev
+          return rest
+        })
+        localStorage.removeItem(
+          `subjectMaps_${selectedWeek}_${selectedSubject}`,
+        )
+        localStorage.removeItem(
+          `currentMapIndex_${selectedWeek}_${selectedSubject}`,
+        )
         const defaultGroups = JSON.parse(
           JSON.stringify(INITIAL_SUBJECT_GROUPS[selectedSubject] || []),
         )
         setGroups(defaultGroups)
         setCurrentGroup(defaultGroups[0]?.id || "")
         setIsAwaitingMap(true)
+        return
       }
+      const newIdx = idx > 0 ? idx - 1 : 0
+      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIdx
+      setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIdx }))
+      setNodes(maps[newIdx].nodes)
+      setLinks(maps[newIdx].links)
+      setGroups(maps[newIdx].groups)
+      setCurrentGroup(maps[newIdx].groups[0]?.id || "")
     }
     saveCurrentSubjectData()
   }, [
