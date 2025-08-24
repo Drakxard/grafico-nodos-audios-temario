@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react"
 import * as d3 from "d3"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -1074,19 +1074,28 @@ audioLayer.ready.then((has) => {
 
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
         <DialogContent>
-          <DialogHeader className="flex items-center gap-2">
-            {step > 0 && (
-              <Button variant="outline" onClick={handleBack} className="px-2">
-                ←
-              </Button>
-            )}
-            <DialogTitle>
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              {step > 0 && (
+                <Button variant="outline" onClick={handleBack} className="px-2">
+                  ←
+                </Button>
+              )}
+              <DialogTitle>
+                {step === 0
+                  ? "Configura carpeta"
+                  : step === 1
+                  ? "Selecciona semana"
+                  : "Selecciona materia"}
+              </DialogTitle>
+            </div>
+            <DialogDescription>
               {step === 0
-                ? "Configura carpeta"
+                ? "Selecciona la carpeta donde se guardarán los datos."
                 : step === 1
-                ? "Selecciona semana"
-                : "Selecciona materia"}
-            </DialogTitle>
+                ? "Elige la semana para organizar tus mapas."
+                : "Elige la materia del mapa."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {folderName && (
@@ -1141,6 +1150,9 @@ audioLayer.ready.then((has) => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Agregar Nuevo Nodo</DialogTitle>
+            <DialogDescription>
+              Ingresa un nombre y crea un nuevo nodo en el mapa.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -1172,6 +1184,9 @@ audioLayer.ready.then((has) => {
                 ? `Mapas de ${SUBJECT_DATA[selectedSubject].name}`
                 : "Mapas"}
             </DialogTitle>
+            <DialogDescription>
+              Elige un mapa existente o crea uno nuevo.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             {selectedWeek &&
@@ -1207,6 +1222,9 @@ audioLayer.ready.then((has) => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Temas del mapa</DialogTitle>
+            <DialogDescription>
+              Edita o agrega temas para organizar los nodos del mapa.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {groups
