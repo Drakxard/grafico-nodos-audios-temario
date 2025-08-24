@@ -1,5 +1,13 @@
 import type { MetadataFile } from './types';
 
+const DEFAULT_META: MetadataFile = { schema_version: 1, nodes: {} };
+const DEFAULT_CONFIG = {
+  weeks: [],
+  weekSubjectMaps: {},
+  weekCurrentMapIndex: {},
+  theme: 'light',
+};
+
 /**
  * Minimal FileStore implementing File System Access API with IndexedDB fallback.
  * This implementation intentionally keeps logic compact and avoids parallel writes.
@@ -77,9 +85,17 @@ export class FileStore {
         try {
           await dataDir.getFileHandle('metadata.json');
         } catch {
-            const file = await dataDir.getFileHandle('metadata.json', { create: true });
-            const writable = await (file as any).createWritable();
-          await writable.write(JSON.stringify({ schema_version: 1, nodes: {} }, null, 2));
+          const file = await dataDir.getFileHandle('metadata.json', { create: true });
+          const writable = await (file as any).createWritable();
+          await writable.write(JSON.stringify(DEFAULT_META, null, 2));
+          await writable.close();
+        }
+        try {
+          await dataDir.getFileHandle('config.json');
+        } catch {
+          const file = await dataDir.getFileHandle('config.json', { create: true });
+          const writable = await (file as any).createWritable();
+          await writable.write(JSON.stringify(DEFAULT_CONFIG, null, 2));
           await writable.close();
         }
       });
@@ -110,6 +126,11 @@ export class FileStore {
         const text = await (await file.getFile()).text();
         return JSON.parse(text) as T;
       } catch {
+        const dataDir = await this.getDataDir();
+        const file = await dataDir.getFileHandle('config.json', { create: true });
+        const writable = await (file as any).createWritable();
+        await writable.write(JSON.stringify(DEFAULT_CONFIG, null, 2));
+        await writable.close();
         return null;
       }
     } else {
@@ -193,17 +214,26 @@ export class FileStore {
 
   async readMeta(): Promise<MetadataFile> {
     if (this.dirHandle) {
-      const dataDir = await this.getDataDir();
-      const file = await dataDir.getFileHandle('metadata.json');
-      const text = await (await file.getFile()).text();
-      return JSON.parse(text) as MetadataFile;
+      try {
+        const dataDir = await this.getDataDir();
+        const file = await dataDir.getFileHandle('metadata.json');
+        const text = await (await file.getFile()).text();
+        return JSON.parse(text) as MetadataFile;
+      } catch {
+        const dataDir = await this.getDataDir();
+        const file = await dataDir.getFileHandle('metadata.json', { create: true });
+        const writable = await (file as any).createWritable();
+        await writable.write(JSON.stringify(DEFAULT_META, null, 2));
+        await writable.close();
+        return DEFAULT_META;
+      }
     } else {
       const db = await this.openDB();
       return new Promise((resolve) => {
         const tx = db.transaction('metadata');
         const req = tx.objectStore('metadata').get('singleton');
-        req.onsuccess = () => resolve(req.result || { schema_version: 1, nodes: {} });
-        req.onerror = () => resolve({ schema_version: 1, nodes: {} });
+        req.onsuccess = () => resolve(req.result || DEFAULT_META);
+        req.onerror = () => resolve(DEFAULT_META);
       });
     }
   }
