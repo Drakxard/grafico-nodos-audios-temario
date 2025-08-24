@@ -427,8 +427,13 @@ const handleFolderClick = async () => {
       saveConfig({ folderName: name })
       await loadPersistedData()
       setStep(1)
-    }
   }
+}
+
+const handleContinue = useCallback(async () => {
+    await loadPersistedData()
+    setStep(1)
+  }, [loadPersistedData])
 
   useEffect(() => {
     setIsMounted(true)
@@ -756,7 +761,11 @@ const handleFolderClick = async () => {
         }
       })
 
-    svg.call(zoom)
+    svg.call(zoom).on("dblclick.zoom", null)
+    svg.on("dblclick", (event) => {
+      event.preventDefault()
+      setIsDialogOpen(true)
+    })
 
     const linksGroup = container.append("g").attr("class", "links")
     const linkElements = linksGroup
@@ -943,7 +952,12 @@ audioLayer.ready.then((has) => {
 
   return (
     <div className="w-full h-screen bg-background text-foreground relative overflow-hidden">
-      <svg ref={svgRef} width="100%" height="100%" className="bg-background" />
+      <svg
+        ref={svgRef}
+        width="100%"
+        height="100%"
+        className="bg-background touch-none"
+      />
       {step > 0 && (
         <Button
           className="absolute top-4 left-4 z-[60]"
@@ -1001,6 +1015,15 @@ audioLayer.ready.then((has) => {
             <Button onClick={handleFolderClick} className="w-full">
               {folderReady ? "Cambiar carpeta" : "Seleccionar carpeta local"}
             </Button>
+            {!folderReady && (
+              <Button
+                variant="outline"
+                onClick={handleContinue}
+                className="w-full"
+              >
+                Continuar
+              </Button>
+            )}
             {step === 1 && (
               <div className="grid gap-2">
                 {weeks.map((w) => (
