@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
+import type { NodeState } from "@/lib/audio/types"
 import { useTheme } from "next-themes"
 import { loadConfig, saveConfig } from "@/lib/config"
 
@@ -19,6 +20,7 @@ interface GraphNode extends d3.SimulationNodeDatum {
   startY?: number
   x?: number
   y?: number
+  placeholder?: boolean
 }
 
 interface Link extends d3.SimulationLinkDatum<GraphNode> {
@@ -109,6 +111,22 @@ const DEFAULT_WEEKS = [
   { id: "week2", name: "Semana 2" },
 ]
 
+const stateToEmoji = (st?: NodeState) => {
+  switch (st) {
+    case "has-audio":
+    case "paused":
+      return "\u25B6\uFE0F" // ▶️
+    case "playing":
+      return "\u23F8\uFE0F" // ⏸️
+    case "recording":
+      return "\u23FA\uFE0F" // ⏺️
+    case "error":
+      return "\u26A0\uFE0F" // ⚠️
+    default:
+      return ""
+  }
+}
+
 const createDefaultConfig = (): PersistedConfig => {
   const weekSubjectMaps: Record<string, Record<string, SubjectMap[]>> = {}
   const weekCurrentMapIndex: Record<string, Record<string, number>> = {}
@@ -132,6 +150,7 @@ export default function NetworkGraph() {
   const [currentGroup, setCurrentGroup] = useState<string>("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newNodeName, setNewNodeName] = useState("")
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
@@ -436,6 +455,21 @@ const handleFolderClick = async () => {
   }
 
   useEffect(() => {
+    if (nodes.length === 0 && groups.length > 0) {
+      const g = groups[0]
+      setNodes([
+        {
+          id: Date.now().toString(),
+          name: "Ingresa nombre",
+          group: g.id,
+          color: g.color,
+          placeholder: true,
+        },
+      ])
+    }
+  }, [nodes, groups])
+
+  useEffect(() => {
     setIsMounted(true)
     const cfg = loadConfig()
     if (cfg.folderName) setFolderName(cfg.folderName)
@@ -607,7 +641,33 @@ const handleFolderClick = async () => {
   ])
 
   const addNode = useCallback(() => {
-    if (!newNodeName.trim() || !currentGroup) return
+    if (!newNodeName.trim()) return
+
+    if (editingNodeId) {
+      const updatedNodes = nodes.map((n) =>
+        n.id === editingNodeId
+          ? { ...n, name: newNodeName.trim(), placeholder: false }
+          : n,
+      )
+      setNodes(updatedNodes)
+      setEditingNodeId(null)
+      setNewNodeName("")
+      setIsDialogOpen(false)
+      setShowAllGroups(false)
+      setNewNodePos(null)
+
+      if (selectedWeek && selectedSubject) {
+        const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+        const idx = currentMapIndex[selectedSubject]
+        if (maps[idx]) {
+          maps[idx] = { nodes: updatedNodes, links, groups }
+        }
+        saveCurrentSubjectData()
+      }
+      return
+    }
+
+    if (!currentGroup) return
 
     const groupData = groups.find((g) => g.id === currentGroup)
     if (!groupData) return
@@ -671,6 +731,7 @@ const handleFolderClick = async () => {
     isAwaitingMap,
     currentMapIndex,
     saveCurrentSubjectData,
+    editingNodeId,
   ])
 
   useEffect(() => {
@@ -806,7 +867,17 @@ const handleFolderClick = async () => {
       .attr("stroke-width", 2)
       .attr("cx", (d) => d.x ?? width / 2)
       .attr("cy", (d) => d.y ?? height / 2)
+      .attr("data-id", (d) => d.id)
+      .attr("data-placeholder", (d) => (d.placeholder ? "true" : null))
       .style("cursor", "pointer")
+      .on("click", (event, d) => {
+        if (d.placeholder) {
+          event.stopPropagation()
+          setEditingNodeId(d.id)
+          setNewNodeName("")
+          setIsDialogOpen(true)
+        }
+      })
 
     nodeElements.call(
       d3
@@ -856,18 +927,34 @@ const handleFolderClick = async () => {
       nodesSelection: nodeElements.nodes(),
       getExtId: (el) => (el as any).__data__.id,
       rootElement: svgElement,
-      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      options: {
+        allowLocalFileSystem: true,
+        autoSaveMetadata: true,
+        onStateChange: (id, st) => {
+          const node = nodes.find((n) => n.id === id)
+          const label = d3
+            .select(svgElement)
+            .select(`text[data-id='${id}']`)
+          if (node) {
+            const emoji = stateToEmoji(st)
+            label.text(`${emoji ? emoji + " " : ""}${node.name}`)
+          }
+        },
+        onError: (code) => {
+          console.log("#error", code)
+        },
+      },
     })
-audioLayerRef.current = audioLayer
-audioLayer.ready.then((has) => {
-  setFolderReady(has)
-  if (has) {
-    const name = audioLayer.getFolderName() || ""
-    setFolderName(name)
-    saveConfig({ folderName: name })
-    loadPersistedData()
-  }
-})
+    audioLayerRef.current = audioLayer
+    audioLayer.ready.then((has) => {
+      setFolderReady(has)
+      if (has) {
+        const name = audioLayer.getFolderName() || ""
+        setFolderName(name)
+        saveConfig({ folderName: name })
+        loadPersistedData()
+      }
+    })
 
 
     const labelsGroup = container.append("g").attr("class", "labels")
@@ -876,6 +963,7 @@ audioLayer.ready.then((has) => {
         .data(nodesCopy)
         .enter()
         .append("text")
+        .attr("data-id", (d) => d.id)
         .text((d) => d.name)
         .attr("font-size", 12)
         .attr("font-family", "sans-serif")
@@ -1078,7 +1166,9 @@ audioLayer.ready.then((has) => {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Agregar Nuevo Nodo</DialogTitle>
+            <DialogTitle>
+              {editingNodeId ? "Editar Nodo" : "Agregar Nuevo Nodo"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -1096,7 +1186,7 @@ audioLayer.ready.then((has) => {
               />
             </div>
             <Button onClick={addNode} className="w-full">
-              Agregar Nodo
+              {editingNodeId ? "Guardar" : "Agregar Nodo"}
             </Button>
           </div>
         </DialogContent>

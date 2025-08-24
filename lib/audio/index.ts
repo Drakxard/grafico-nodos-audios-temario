@@ -38,6 +38,7 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
 
   const startRecording = async (extId: string) => {
     try {
+      console.log('#graba');
       await recorder.start();
       updateState(extId, 'recording');
     } catch (e) {
@@ -47,7 +48,9 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
 
   const stopRecording = async (extId: string) => {
     try {
+      console.log('#corta grabacion');
       const blob = await recorder.stop();
+      console.log('#intentando guardar');
       await store.writeAudio(extId, blob, 'webm');
       const duration = await getDuration(blob);
       const now = new Date().toISOString();
@@ -60,8 +63,13 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
         last_modified: now,
       };
       await saveMetadata();
+      const folder = store.getDirName();
+      const path = `${folder ? folder + '/' : ''}gestor/system/audios/${extId}.webm`;
+      console.log(`#guardado en ${path}`);
       updateState(extId, 'has-audio');
     } catch (e) {
+      console.log('#error al guardar');
+      updateState(extId, 'error');
       options?.onError?.('E_WRITE_FAIL', e);
     }
   };
@@ -134,6 +142,7 @@ export function attachAudioLayer({ nodesSelection, getExtId, rootElement, option
   };
 
   const bind = (el: HTMLElement | SVGElement) => {
+    if ((el as any).dataset?.placeholder === 'true') return;
     const extId = getExtId(el);
     bindTapAndLongPress(
       el,
