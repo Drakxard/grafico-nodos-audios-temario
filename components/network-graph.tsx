@@ -295,6 +295,7 @@ export default function NetworkGraph() {
   const selectWeek = (id: string) => {
     setSelectedWeek(id)
     setCurrentMapIndex({ ...weekCurrentMapIndexRef.current[id] })
+    setIsAwaitingMap(false)
     setStep(2)
   }
 
@@ -358,10 +359,12 @@ export default function NetworkGraph() {
     setCurrentGroup(map.groups[0]?.id || "")
     setShowAllGroups(false)
     setIsConfigDialogOpen(false)
+    setIsAwaitingMap(false)
     setStep(3)
   }
 
   const handleBack = useCallback(() => {
+    setIsAwaitingMap(false)
     if (step === 3) {
       saveCurrentSubjectData()
       setSelectedSubject(null)
