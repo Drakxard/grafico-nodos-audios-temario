@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
+import type { NodeState } from "@/lib/audio/types"
 import { useTheme } from "next-themes"
 import { loadConfig, saveConfig } from "@/lib/config"
 
@@ -19,6 +20,7 @@ interface GraphNode extends d3.SimulationNodeDatum {
   startY?: number
   x?: number
   y?: number
+  isPlaceholder?: boolean
 }
 
 interface Link extends d3.SimulationLinkDatum<GraphNode> {
@@ -132,6 +134,7 @@ export default function NetworkGraph() {
   const [currentGroup, setCurrentGroup] = useState<string>("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newNodeName, setNewNodeName] = useState("")
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
@@ -175,6 +178,23 @@ export default function NetworkGraph() {
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
+
+  useEffect(() => {
+    if (nodes.length === 0 && groups.length > 0) {
+      const g = groups[0]
+      setNodes([
+        {
+          id: `placeholder-${Date.now()}`,
+          name: "Ingresa nombre",
+          group: g.id,
+          color: g.color,
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+          isPlaceholder: true,
+        },
+      ])
+    }
+  }, [nodes, groups])
   const persistConfig = useCallback(async () => {
     if (!audioLayerRef.current?.hasFolderAccess()) return
     const cfg: PersistedConfig = {
@@ -607,7 +627,25 @@ const handleFolderClick = async () => {
   ])
 
   const addNode = useCallback(() => {
-    if (!newNodeName.trim() || !currentGroup) return
+    if (!newNodeName.trim()) return
+
+    if (editingNodeId) {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === editingNodeId
+            ? { ...n, name: newNodeName.trim(), isPlaceholder: false }
+            : n,
+        ),
+      )
+      setEditingNodeId(null)
+      setIsDialogOpen(false)
+      setShowAllGroups(false)
+      setNewNodePos(null)
+      saveCurrentSubjectData()
+      return
+    }
+
+    if (!currentGroup) return
 
     const groupData = groups.find((g) => g.id === currentGroup)
     if (!groupData) return
@@ -671,6 +709,7 @@ const handleFolderClick = async () => {
     isAwaitingMap,
     currentMapIndex,
     saveCurrentSubjectData,
+    editingNodeId,
   ])
 
   useEffect(() => {
@@ -851,12 +890,49 @@ const handleFolderClick = async () => {
         }),
     )
 
+    nodeElements.on("click", (_, d: GraphNode) => {
+      if (d.isPlaceholder) {
+        setEditingNodeId(d.id)
+        setNewNodeName("")
+        setIsDialogOpen(true)
+      }
+    })
+
+    const iconsGroup = container.append("g").attr("class", "icons")
+    const iconElements = iconsGroup
+      .selectAll("text")
+      .data(nodesCopy)
+      .enter()
+      .append("text")
+      .text("")
+      .attr("font-size", 16)
+      .attr("text-anchor", "middle")
+      .attr("pointer-events", "none")
+
     audioLayerRef.current?.dispose()
+    const stateEmoji = (st: NodeState) =>
+      st === "recording"
+        ? "⏺️"
+        : st === "playing"
+        ? "⏸️"
+        : st === "has-audio" || st === "paused"
+        ? "▶️"
+        : ""
+
     const audioLayer = attachAudioLayer({
-      nodesSelection: nodeElements.nodes(),
+      nodesSelection: nodeElements.filter((d: any) => !d.isPlaceholder).nodes(),
       getExtId: (el) => (el as any).__data__.id,
       rootElement: svgElement,
-      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      options: {
+        allowLocalFileSystem: true,
+        autoSaveMetadata: true,
+        onStateChange: (extId, st) => {
+          iconElements.filter((d: any) => d.id === extId).text(stateEmoji(st))
+        },
+        onError: (_, err) => {
+          console.error("#error", err)
+        },
+      },
     })
 audioLayerRef.current = audioLayer
 audioLayer.ready.then((has) => {
@@ -942,6 +1018,9 @@ audioLayer.ready.then((has) => {
           labelElements
             .attr("x", (d: any) => d.x || 0)
             .attr("y", (d: any) => (d.y || 0) + 30)
+          iconElements
+            .attr("x", (d: any) => d.x || 0)
+            .attr("y", (d: any) => (d.y || 0) + 4)
       } catch (error) {
         console.log("[v0] Error during tick update, stopping simulation:", error)
         simulation.stop()

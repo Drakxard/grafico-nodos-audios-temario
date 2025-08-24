@@ -265,6 +265,14 @@ export class FileStore {
     return this.dirHandle?.name ?? null;
   }
 
+  getAudioPath(extId: string, ext = 'webm'): string {
+    const safe = extId.replace(/[^A-Za-z0-9 .,_-]/g, '_');
+    if (this.dirHandle) {
+      return `${this.dirHandle.name}/gestor/system/audios/${safe}.${ext}`;
+    }
+    return `audios/${safe}.${ext}`;
+  }
+
   private async getAudiosDir() {
     if (!this.dirHandle) throw new Error('no dir');
     const gestor = await this.dirHandle.getDirectoryHandle('gestor');
