@@ -173,6 +173,14 @@ export default function NetworkGraph() {
 
   const simulationRef = useRef<d3.Simulation<GraphNode, Link> | null>(null)
 
+  const handleAudioError = useCallback((code: string) => {
+    if (code === 'E_WRITE_FAIL') {
+      alert(
+        'No se pudo guardar el audio. Es posible que el permiso de almacenamiento haya sido rechazado.',
+      )
+    }
+  }, [])
+
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
   const persistConfig = useCallback(async () => {
@@ -231,7 +239,6 @@ export default function NetworkGraph() {
           groups: m.groups,
         }))
 
-        maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
         localStorage.setItem(
           `subjectMaps_${week.id}_${subjectId}`,
           JSON.stringify(maps),
@@ -403,7 +410,11 @@ export default function NetworkGraph() {
         nodesSelection: [],
         getExtId: () => "",
         rootElement: svgRef.current,
-        options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+        options: {
+          allowLocalFileSystem: true,
+          autoSaveMetadata: true,
+          onError: handleAudioError,
+        },
       })
     }
     if (audioLayerRef.current) {
@@ -417,7 +428,7 @@ export default function NetworkGraph() {
       return has
     }
     return false
-  }, [])
+  }, [handleAudioError])
 
 const handleFolderClick = async () => {
     await ensureAudioLayer()
@@ -856,7 +867,11 @@ const handleFolderClick = async () => {
       nodesSelection: nodeElements.nodes(),
       getExtId: (el) => (el as any).__data__.id,
       rootElement: svgElement,
-      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      options: {
+        allowLocalFileSystem: true,
+        autoSaveMetadata: true,
+        onError: handleAudioError,
+      },
     })
 audioLayerRef.current = audioLayer
 audioLayer.ready.then((has) => {
@@ -961,7 +976,14 @@ audioLayer.ready.then((has) => {
         simulationRef.current = null
       }
     }
-  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding, loadPersistedData])
+  }, [
+    getVisibleNodes,
+    getVisibleLinks,
+    isMounted,
+    nodePadding,
+    loadPersistedData,
+    handleAudioError,
+  ])
 
   if (!isMounted) {
     return <div className="w-full h-screen bg-background" />

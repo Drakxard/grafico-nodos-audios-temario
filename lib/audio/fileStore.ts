@@ -163,10 +163,17 @@ export class FileStore {
 
   async writeAudio(extId: string, blob: Blob, ext = 'webm'): Promise<void> {
     if (this.dirHandle) {
-      const file = await this.getAudioFileHandle(extId, ext, true);
-      const writable = await file.createWritable();
-      await writable.write(blob);
-      await writable.close();
+      try {
+        const file = await this.getAudioFileHandle(extId, ext, true);
+        const writable = await file.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        // verify file was actually written
+        const verify = await this.getAudioFileHandle(extId, ext, false);
+        await verify.getFile();
+      } catch (e) {
+        throw e;
+      }
     } else {
       const db = await this.openDB();
       const tx = db.transaction('audios', 'readwrite');
