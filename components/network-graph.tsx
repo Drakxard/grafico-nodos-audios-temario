@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
+import type { NodeState } from "@/lib/audio/types"
 import { useTheme } from "next-themes"
 import { loadConfig, saveConfig } from "@/lib/config"
 
@@ -109,6 +110,15 @@ const DEFAULT_WEEKS = [
   { id: "week2", name: "Semana 2" },
 ]
 
+const STATE_EMOJI: Record<NodeState, string> = {
+  idle: "⏺️",
+  recording: "🔴",
+  "has-audio": "▶️",
+  playing: "⏸️",
+  paused: "▶️",
+  error: "⚠️",
+}
+
 const createDefaultConfig = (): PersistedConfig => {
   const weekSubjectMaps: Record<string, Record<string, SubjectMap[]>> = {}
   const weekCurrentMapIndex: Record<string, Record<string, number>> = {}
@@ -172,6 +182,22 @@ export default function NetworkGraph() {
   const DELETE_DISTANCE = 150
 
   const simulationRef = useRef<d3.Simulation<GraphNode, Link> | null>(null)
+
+  useEffect(() => {
+    if (nodes.length === 0 && groups.length > 0) {
+      const g = groups[0]
+      const placeholder: GraphNode = {
+        id: `default-${Date.now()}`,
+        name: "Ingresa nombre",
+        group: g.id,
+        color: g.color,
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      }
+      setNodes([placeholder])
+      setLinks([])
+    }
+  }, [nodes, groups])
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
@@ -300,9 +326,9 @@ export default function NetworkGraph() {
 
   const saveCurrentSubjectData = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const serializedMaps = weekSubjectMapsRef.current[selectedWeek][
-      selectedSubject
-    ].map((m) => ({
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
+    const serializedMaps = maps.map((m) => ({
       nodes: m.nodes.map(({ id, name, group, color }) => ({
         id,
         name,
@@ -322,7 +348,7 @@ export default function NetworkGraph() {
     localStorage.setItem(
       `currentMapIndex_${selectedWeek}_${selectedSubject}`,
       JSON.stringify(
-        weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
+        weekCurrentMapIndexRef.current[selectedWeek]?.[selectedSubject] ?? 0,
       ),
     )
     persistConfig()
@@ -333,6 +359,8 @@ export default function NetworkGraph() {
     const subject = SUBJECT_DATA[id]
     if (!subject) return
     setSelectedSubject(id)
+    weekSubjectMapsRef.current[selectedWeek] ||= {}
+    weekSubjectMapsRef.current[selectedWeek][id] ||= []
     const maps = weekSubjectMapsRef.current[selectedWeek][id]
     if (!maps.length) {
       const defaultGroups = JSON.parse(
@@ -469,7 +497,8 @@ const handleFolderClick = async () => {
       currentMapIndex[selectedSubject] === undefined
     )
       return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     const idx = currentMapIndex[selectedSubject]
     if (!maps[idx]) return
     maps[idx].nodes = nodes.map(({ id, name, group, color }) => ({
@@ -533,8 +562,8 @@ const handleFolderClick = async () => {
   const goToMapIndex = useCallback(
     (index: number) => {
       if (!selectedWeek || !selectedSubject) return
-      const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
-      if (index < 0 || index >= maps.length) return
+      const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+      if (!maps || index < 0 || index >= maps.length) return
       weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = index
       setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: index }))
       const map = maps[index]
@@ -550,6 +579,8 @@ const handleFolderClick = async () => {
 
   const createNewMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
+    weekSubjectMapsRef.current[selectedWeek] ||= {}
+    weekSubjectMapsRef.current[selectedWeek][selectedSubject] ||= []
     const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
     const newIndex = maps.length
     weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
@@ -568,7 +599,8 @@ const handleFolderClick = async () => {
 
   const goToPrevMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     let idx = currentMapIndex[selectedSubject]
     if (isAwaitingMap) {
       if (maps.length === 0) return
@@ -588,7 +620,8 @@ const handleFolderClick = async () => {
 
   const goToNextMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     let idx = currentMapIndex[selectedSubject]
     if (isAwaitingMap) {
       if (maps.length === 0) return
@@ -641,6 +674,8 @@ const handleFolderClick = async () => {
     setNewNodePos(null)
 
     if (selectedWeek && selectedSubject) {
+      weekSubjectMapsRef.current[selectedWeek] ||= {}
+      weekSubjectMapsRef.current[selectedWeek][selectedSubject] ||= []
       const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
       if (isAwaitingMap) {
         maps.push({ nodes: updatedNodes, links: updatedLinks, groups })
@@ -776,6 +811,8 @@ const handleFolderClick = async () => {
     svg.call(zoom)
     svg.on("dblclick.zoom", null)
     svg.on("dblclick", (event) => {
+      const target = event.target as HTMLElement
+      if (target.tagName.toLowerCase() === "circle") return
       const point = d3.pointer(event)
       const transform = d3.zoomTransform(svgElement)
       const x = (point[0] - transform.x) / transform.k
@@ -807,6 +844,20 @@ const handleFolderClick = async () => {
       .attr("cx", (d) => d.x ?? width / 2)
       .attr("cy", (d) => d.y ?? height / 2)
       .style("cursor", "pointer")
+
+    const iconsGroup = container.append("g").attr("class", "node-icons")
+    const iconElements = iconsGroup
+      .selectAll("text")
+      .data(nodesCopy)
+      .enter()
+      .append("text")
+      .attr("class", "node-icon")
+      .attr("data-id", (d) => d.id)
+      .attr("text-anchor", "middle")
+      .attr("alignment-baseline", "middle")
+      .attr("font-size", 16)
+      .style("pointer-events", "none")
+      .text(STATE_EMOJI.idle)
 
     nodeElements.call(
       d3
@@ -856,7 +907,18 @@ const handleFolderClick = async () => {
       nodesSelection: nodeElements.nodes(),
       getExtId: (el) => (el as any).__data__.id,
       rootElement: svgElement,
-      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      options: {
+        allowLocalFileSystem: true,
+        autoSaveMetadata: true,
+        onStateChange: (id, st) => {
+          d3.select(svgElement)
+            .select(`text.node-icon[data-id='${id}']`)
+            .text(STATE_EMOJI[st])
+        },
+        onError: (code) => {
+          console.error("#error", code)
+        },
+      },
     })
 audioLayerRef.current = audioLayer
 audioLayer.ready.then((has) => {
@@ -888,8 +950,9 @@ audioLayer.ready.then((has) => {
       const linkNodes = linkElements.nodes()
       const nodeNodes = nodeElements.nodes()
       const labelNodes = labelElements.nodes()
+      const iconNodes = iconElements.nodes()
 
-      if (!nodeNodes.length || !labelNodes.length) {
+      if (!nodeNodes.length || !labelNodes.length || !iconNodes.length) {
         console.log("[v0] Elements not available during tick, stopping simulation")
         simulation.stop()
         return
@@ -916,6 +979,12 @@ audioLayer.ready.then((has) => {
         return
       }
 
+      if (!iconNodes.every(isValidDomNode)) {
+        console.log("[v0] Invalid icon elements detected, stopping simulation")
+        simulation.stop()
+        return
+      }
+
       try {
         linkElements
           .attr("x1", (d: any) => {
@@ -938,6 +1007,10 @@ audioLayer.ready.then((has) => {
           nodeElements
             .attr("cx", (d: any) => d.x || 0)
             .attr("cy", (d: any) => d.y || 0)
+
+          iconElements
+            .attr("x", (d: any) => d.x || 0)
+            .attr("y", (d: any) => d.y || 0)
 
           labelElements
             .attr("x", (d: any) => d.x || 0)
