@@ -142,6 +142,7 @@ export default function NetworkGraph() {
   const [currentGroup, setCurrentGroup] = useState<string>("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newNodeName, setNewNodeName] = useState("")
+  const [renamingNodeId, setRenamingNodeId] = useState<string | null>(null)
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
@@ -326,9 +327,9 @@ export default function NetworkGraph() {
 
   const saveCurrentSubjectData = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const serializedMaps = weekSubjectMapsRef.current[selectedWeek][
-      selectedSubject
-    ].map((m) => ({
+    const subjectMaps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!subjectMaps) return
+    const serializedMaps = subjectMaps.map((m) => ({
       nodes: m.nodes.map(({ id, name, group, color }) => ({
         id,
         name,
@@ -348,7 +349,7 @@ export default function NetworkGraph() {
     localStorage.setItem(
       `currentMapIndex_${selectedWeek}_${selectedSubject}`,
       JSON.stringify(
-        weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
+        weekCurrentMapIndexRef.current[selectedWeek]?.[selectedSubject] ?? 0,
       ),
     )
     persistConfig()
@@ -359,7 +360,11 @@ export default function NetworkGraph() {
     const subject = SUBJECT_DATA[id]
     if (!subject) return
     setSelectedSubject(id)
-    const maps = weekSubjectMapsRef.current[selectedWeek][id]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[id] || []
+    if (!weekSubjectMapsRef.current[selectedWeek]) {
+      weekSubjectMapsRef.current[selectedWeek] = {}
+    }
+    weekSubjectMapsRef.current[selectedWeek][id] = maps
     if (!maps.length) {
       const defaultGroups = JSON.parse(
         JSON.stringify(INITIAL_SUBJECT_GROUPS[id] || []),
@@ -495,7 +500,8 @@ const handleFolderClick = async () => {
       currentMapIndex[selectedSubject] === undefined
     )
       return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     const idx = currentMapIndex[selectedSubject]
     if (!maps[idx]) return
     maps[idx].nodes = nodes.map(({ id, name, group, color }) => ({
@@ -559,7 +565,8 @@ const handleFolderClick = async () => {
   const goToMapIndex = useCallback(
     (index: number) => {
       if (!selectedWeek || !selectedSubject) return
-      const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+      const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+      if (!maps) return
       if (index < 0 || index >= maps.length) return
       weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = index
       setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: index }))
@@ -576,7 +583,12 @@ const handleFolderClick = async () => {
 
   const createNewMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps =
+      weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject] || []
+    if (!weekSubjectMapsRef.current[selectedWeek]) {
+      weekSubjectMapsRef.current[selectedWeek] = {}
+    }
+    weekSubjectMapsRef.current[selectedWeek][selectedSubject] = maps
     const newIndex = maps.length
     weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
     setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
@@ -594,7 +606,8 @@ const handleFolderClick = async () => {
 
   const goToPrevMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     let idx = currentMapIndex[selectedSubject]
     if (isAwaitingMap) {
       if (maps.length === 0) return
@@ -614,7 +627,8 @@ const handleFolderClick = async () => {
 
   const goToNextMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     let idx = currentMapIndex[selectedSubject]
     if (isAwaitingMap) {
       if (maps.length === 0) return
@@ -634,6 +648,19 @@ const handleFolderClick = async () => {
 
   const addNode = useCallback(() => {
     if (!newNodeName.trim() || !currentGroup) return
+
+    if (renamingNodeId) {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === renamingNodeId ? { ...n, name: newNodeName.trim() } : n,
+        ),
+      )
+      setRenamingNodeId(null)
+      setNewNodeName("")
+      setIsDialogOpen(false)
+      if (selectedWeek && selectedSubject) saveCurrentSubjectData()
+      return
+    }
 
     const groupData = groups.find((g) => g.id === currentGroup)
     if (!groupData) return
@@ -667,7 +694,12 @@ const handleFolderClick = async () => {
     setNewNodePos(null)
 
     if (selectedWeek && selectedSubject) {
-      const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+      const maps =
+        weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject] || []
+      if (!weekSubjectMapsRef.current[selectedWeek]) {
+        weekSubjectMapsRef.current[selectedWeek] = {}
+      }
+      weekSubjectMapsRef.current[selectedWeek][selectedSubject] = maps
       if (isAwaitingMap) {
         maps.push({ nodes: updatedNodes, links: updatedLinks, groups })
         weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] =
@@ -697,6 +729,7 @@ const handleFolderClick = async () => {
     isAwaitingMap,
     currentMapIndex,
     saveCurrentSubjectData,
+    renamingNodeId,
   ])
 
   useEffect(() => {
@@ -903,6 +936,14 @@ const handleFolderClick = async () => {
           d3.select(svgElement)
             .select(`text.node-icon[data-id='${id}']`)
             .text(STATE_EMOJI[st])
+          if (st === 'has-audio') {
+            const node = nodes.find((n) => n.id === id)
+            if (node && node.name === 'Ingresa nombre') {
+              setRenamingNodeId(id)
+              setNewNodeName("")
+              setIsDialogOpen(true)
+            }
+          }
         },
         onError: (code) => {
           console.error("#error", code)
