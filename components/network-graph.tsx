@@ -281,9 +281,12 @@ export default function NetworkGraph() {
           localStorage.getItem(
             `currentMapIndex_${week.id}_${subjectId}`,
           ) || null
-        weekCurrentMapIndexRef.current[week.id][subjectId] = index
-          ? JSON.parse(index)
-          : Math.max(0, maps.length - 1)
+        const maxIdx = Math.max(0, maps.length - 1)
+        const parsedIdx = index ? JSON.parse(index) : maxIdx
+        weekCurrentMapIndexRef.current[week.id][subjectId] = Math.min(
+          Math.max(0, parsedIdx),
+          maxIdx,
+        )
       })
     })
   }, [])
@@ -359,7 +362,7 @@ export default function NetworkGraph() {
     const subject = SUBJECT_DATA[id]
     if (!subject) return
     setSelectedSubject(id)
-    const maps = weekSubjectMapsRef.current[selectedWeek][id]
+    const maps = weekSubjectMapsRef.current[selectedWeek][id] || []
     if (!maps.length) {
       const defaultGroups = JSON.parse(
         JSON.stringify(INITIAL_SUBJECT_GROUPS[id] || []),
@@ -376,12 +379,24 @@ export default function NetworkGraph() {
       setStep(3)
       return
     }
-    const idx = currentMapIndex[id] ?? maps.length - 1
+    let idx = currentMapIndex[id]
+    if (idx === undefined || idx < 0 || idx >= maps.length) {
+      idx = maps.length - 1
+      weekCurrentMapIndexRef.current[selectedWeek][id] = idx
+      setCurrentMapIndex((prev) => ({ ...prev, [id]: idx }))
+    }
     const map = maps[idx]
-    setNodes(map.nodes)
-    setLinks(map.links)
-    setGroups(map.groups)
-    setCurrentGroup(map.groups[0]?.id || "")
+    if (!map) {
+      setNodes([])
+      setLinks([])
+      setGroups([])
+      setCurrentGroup("")
+    } else {
+      setNodes(map.nodes || [])
+      setLinks(map.links || [])
+      setGroups(map.groups || [])
+      setCurrentGroup(map.groups[0]?.id || "")
+    }
     setShowAllGroups(false)
     setIsConfigDialogOpen(false)
     setStep(3)
