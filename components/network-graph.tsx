@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
+import type { NodeState } from "@/lib/audio/types"
 import { useTheme } from "next-themes"
 import { loadConfig, saveConfig } from "@/lib/config"
 
@@ -109,6 +110,15 @@ const DEFAULT_WEEKS = [
   { id: "week2", name: "Semana 2" },
 ]
 
+const STATE_EMOJI: Record<NodeState, string> = {
+  idle: "⏺️",
+  recording: "🔴",
+  "has-audio": "▶️",
+  playing: "⏸️",
+  paused: "▶️",
+  error: "⚠️",
+}
+
 const createDefaultConfig = (): PersistedConfig => {
   const weekSubjectMaps: Record<string, Record<string, SubjectMap[]>> = {}
   const weekCurrentMapIndex: Record<string, Record<string, number>> = {}
@@ -172,6 +182,22 @@ export default function NetworkGraph() {
   const DELETE_DISTANCE = 150
 
   const simulationRef = useRef<d3.Simulation<GraphNode, Link> | null>(null)
+
+  useEffect(() => {
+    if (nodes.length === 0 && groups.length > 0) {
+      const g = groups[0]
+      const placeholder: GraphNode = {
+        id: `default-${Date.now()}`,
+        name: "Toca para grabar",
+        group: g.id,
+        color: g.color,
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      }
+      setNodes([placeholder])
+      setLinks([])
+    }
+  }, [nodes, groups])
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
@@ -472,36 +498,27 @@ const handleFolderClick = async () => {
     const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
     const idx = currentMapIndex[selectedSubject]
     if (!maps[idx]) return
-    maps[idx].nodes = nodes.map(({ id, name, group, color }) => ({
+    const filteredNodes = nodes.filter((n) => !n.id.startsWith("default-"))
+    const nodeIds = new Set(filteredNodes.map((n) => n.id))
+    maps[idx].nodes = filteredNodes.map(({ id, name, group, color }) => ({
       id,
       name,
       group,
       color,
     }))
-    maps[idx].links = links.map((l) => ({
-      source: typeof l.source === "string" ? l.source : l.source.id,
-      target: typeof l.target === "string" ? l.target : l.target.id,
-    }))
+    maps[idx].links = links
+      .filter((l) => {
+        const sourceId =
+          typeof l.source === "string" ? l.source : l.source.id
+        const targetId =
+          typeof l.target === "string" ? l.target : l.target.id
+        return nodeIds.has(sourceId) && nodeIds.has(targetId)
+      })
+      .map((l) => ({
+        source: typeof l.source === "string" ? l.source : l.source.id,
+        target: typeof l.target === "string" ? l.target : l.target.id,
+      }))
     maps[idx].groups = groups
-    if (nodes.length === 0) {
-      maps.splice(idx, 1)
-      const newIdx = idx > 0 ? idx - 1 : 0
-      weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIdx
-      setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIdx }))
-      if (maps[newIdx]) {
-        setNodes(maps[newIdx].nodes)
-        setLinks(maps[newIdx].links)
-        setGroups(maps[newIdx].groups)
-        setCurrentGroup(maps[newIdx].groups[0]?.id || "")
-      } else {
-        const defaultGroups = JSON.parse(
-          JSON.stringify(INITIAL_SUBJECT_GROUPS[selectedSubject] || []),
-        )
-        setGroups(defaultGroups)
-        setCurrentGroup(defaultGroups[0]?.id || "")
-        setIsAwaitingMap(true)
-      }
-    }
     saveCurrentSubjectData()
   }, [
     nodes,
@@ -808,6 +825,20 @@ const handleFolderClick = async () => {
       .attr("cy", (d) => d.y ?? height / 2)
       .style("cursor", "pointer")
 
+    const iconsGroup = container.append("g").attr("class", "node-icons")
+    const iconElements = iconsGroup
+      .selectAll("text")
+      .data(nodesCopy)
+      .enter()
+      .append("text")
+      .attr("class", "node-icon")
+      .attr("data-id", (d) => d.id)
+      .attr("text-anchor", "middle")
+      .attr("alignment-baseline", "middle")
+      .attr("font-size", 16)
+      .style("pointer-events", "none")
+      .text(STATE_EMOJI.idle)
+
     nodeElements.call(
       d3
         .drag<SVGCircleElement, GraphNode>()
@@ -856,7 +887,18 @@ const handleFolderClick = async () => {
       nodesSelection: nodeElements.nodes(),
       getExtId: (el) => (el as any).__data__.id,
       rootElement: svgElement,
-      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      options: {
+        allowLocalFileSystem: true,
+        autoSaveMetadata: true,
+        onStateChange: (id, st) => {
+          d3.select(svgElement)
+            .select(`text.node-icon[data-id='${id}']`)
+            .text(STATE_EMOJI[st])
+        },
+        onError: (code) => {
+          console.error("#error", code)
+        },
+      },
     })
 audioLayerRef.current = audioLayer
 audioLayer.ready.then((has) => {
@@ -888,8 +930,9 @@ audioLayer.ready.then((has) => {
       const linkNodes = linkElements.nodes()
       const nodeNodes = nodeElements.nodes()
       const labelNodes = labelElements.nodes()
+      const iconNodes = iconElements.nodes()
 
-      if (!nodeNodes.length || !labelNodes.length) {
+      if (!nodeNodes.length || !labelNodes.length || !iconNodes.length) {
         console.log("[v0] Elements not available during tick, stopping simulation")
         simulation.stop()
         return
@@ -916,6 +959,12 @@ audioLayer.ready.then((has) => {
         return
       }
 
+      if (!iconNodes.every(isValidDomNode)) {
+        console.log("[v0] Invalid icon elements detected, stopping simulation")
+        simulation.stop()
+        return
+      }
+
       try {
         linkElements
           .attr("x1", (d: any) => {
@@ -938,6 +987,10 @@ audioLayer.ready.then((has) => {
           nodeElements
             .attr("cx", (d: any) => d.x || 0)
             .attr("cy", (d: any) => d.y || 0)
+
+          iconElements
+            .attr("x", (d: any) => d.x || 0)
+            .attr("y", (d: any) => d.y || 0)
 
           labelElements
             .attr("x", (d: any) => d.x || 0)
