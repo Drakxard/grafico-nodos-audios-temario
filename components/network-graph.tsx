@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
+import type { NodeState } from "@/lib/audio/types"
 import { useTheme } from "next-themes"
 import { loadConfig, saveConfig } from "@/lib/config"
 
@@ -109,6 +110,15 @@ const DEFAULT_WEEKS = [
   { id: "week2", name: "Semana 2" },
 ]
 
+const STATE_EMOJI: Record<NodeState, string> = {
+  idle: "⏺️",
+  recording: "🔴",
+  "has-audio": "▶️",
+  playing: "⏸️",
+  paused: "▶️",
+  error: "⚠️",
+}
+
 const createDefaultConfig = (): PersistedConfig => {
   const weekSubjectMaps: Record<string, Record<string, SubjectMap[]>> = {}
   const weekCurrentMapIndex: Record<string, Record<string, number>> = {}
@@ -132,6 +142,7 @@ export default function NetworkGraph() {
   const [currentGroup, setCurrentGroup] = useState<string>("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newNodeName, setNewNodeName] = useState("")
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
@@ -172,6 +183,23 @@ export default function NetworkGraph() {
   const DELETE_DISTANCE = 150
 
   const simulationRef = useRef<d3.Simulation<GraphNode, Link> | null>(null)
+
+  useEffect(() => {
+    if (nodes.length === 0 && groups.length > 0) {
+      const g = groups[0]
+      const placeholder: GraphNode = {
+        id: `default-${Date.now()}`,
+        name: "Ingresa nombre",
+        group: g.id,
+        color: g.color,
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      }
+      setNodes([placeholder])
+      setLinks([])
+      setEditingNodeId(null)
+    }
+  }, [nodes, groups])
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
@@ -231,7 +259,7 @@ export default function NetworkGraph() {
           groups: m.groups,
         }))
 
-        maps = maps.filter((m: any) => m.nodes && m.nodes.length > 0)
+        // Persist even empty maps to maintain subject structure
         localStorage.setItem(
           `subjectMaps_${week.id}_${subjectId}`,
           JSON.stringify(maps),
@@ -300,9 +328,9 @@ export default function NetworkGraph() {
 
   const saveCurrentSubjectData = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const serializedMaps = weekSubjectMapsRef.current[selectedWeek][
-      selectedSubject
-    ].map((m) => ({
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
+    const serializedMaps = maps.map((m) => ({
       nodes: m.nodes.map(({ id, name, group, color }) => ({
         id,
         name,
@@ -333,7 +361,7 @@ export default function NetworkGraph() {
     const subject = SUBJECT_DATA[id]
     if (!subject) return
     setSelectedSubject(id)
-    const maps = weekSubjectMapsRef.current[selectedWeek][id]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[id] || []
     if (!maps.length) {
       const defaultGroups = JSON.parse(
         JSON.stringify(INITIAL_SUBJECT_GROUPS[id] || []),
@@ -350,7 +378,8 @@ export default function NetworkGraph() {
       setStep(3)
       return
     }
-    const idx = currentMapIndex[id] ?? maps.length - 1
+    let idx = currentMapIndex[id]
+    if (idx == null || idx < 0 || idx >= maps.length) idx = maps.length - 1
     const map = maps[idx]
     setNodes(map.nodes)
     setLinks(map.links)
@@ -606,9 +635,23 @@ const handleFolderClick = async () => {
     goToMapIndex,
   ])
 
-  const addNode = useCallback(() => {
-    if (!newNodeName.trim() || !currentGroup) return
+  const saveNode = useCallback(() => {
+    if (!newNodeName.trim()) return
 
+    if (editingNodeId) {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === editingNodeId ? { ...n, name: newNodeName.trim() } : n,
+        ),
+      )
+      setEditingNodeId(null)
+      setIsDialogOpen(false)
+      setNewNodeName("")
+      if (selectedWeek && selectedSubject) saveCurrentSubjectData()
+      return
+    }
+
+    if (!currentGroup) return
     const groupData = groups.find((g) => g.id === currentGroup)
     if (!groupData) return
 
@@ -661,6 +704,7 @@ const handleFolderClick = async () => {
     }
   }, [
     newNodeName,
+    editingNodeId,
     currentGroup,
     groups,
     nodes,
@@ -808,6 +852,20 @@ const handleFolderClick = async () => {
       .attr("cy", (d) => d.y ?? height / 2)
       .style("cursor", "pointer")
 
+    const iconsGroup = container.append("g").attr("class", "node-icons")
+    const iconElements = iconsGroup
+      .selectAll("text")
+      .data(nodesCopy)
+      .enter()
+      .append("text")
+      .attr("class", "node-icon")
+      .attr("data-id", (d) => d.id)
+      .attr("text-anchor", "middle")
+      .attr("alignment-baseline", "middle")
+      .attr("font-size", 16)
+      .style("pointer-events", "none")
+      .text(STATE_EMOJI.idle)
+
     nodeElements.call(
       d3
         .drag<SVGCircleElement, GraphNode>()
@@ -856,7 +914,26 @@ const handleFolderClick = async () => {
       nodesSelection: nodeElements.nodes(),
       getExtId: (el) => (el as any).__data__.id,
       rootElement: svgElement,
-      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      options: {
+        allowLocalFileSystem: true,
+        autoSaveMetadata: true,
+        onStateChange: (id, st) => {
+          d3.select(svgElement)
+            .select(`text.node-icon[data-id='${id}']`)
+            .text(STATE_EMOJI[st])
+          if (st === 'has-audio') {
+            const node = nodes.find((n) => n.id === id)
+            if (node && node.name === 'Ingresa nombre') {
+              setEditingNodeId(id)
+              setNewNodeName('')
+              setIsDialogOpen(true)
+            }
+          }
+        },
+        onError: (code) => {
+          console.error("#error", code)
+        },
+      },
     })
 audioLayerRef.current = audioLayer
 audioLayer.ready.then((has) => {
@@ -888,8 +965,9 @@ audioLayer.ready.then((has) => {
       const linkNodes = linkElements.nodes()
       const nodeNodes = nodeElements.nodes()
       const labelNodes = labelElements.nodes()
+      const iconNodes = iconElements.nodes()
 
-      if (!nodeNodes.length || !labelNodes.length) {
+      if (!nodeNodes.length || !labelNodes.length || !iconNodes.length) {
         console.log("[v0] Elements not available during tick, stopping simulation")
         simulation.stop()
         return
@@ -916,6 +994,12 @@ audioLayer.ready.then((has) => {
         return
       }
 
+      if (!iconNodes.every(isValidDomNode)) {
+        console.log("[v0] Invalid icon elements detected, stopping simulation")
+        simulation.stop()
+        return
+      }
+
       try {
         linkElements
           .attr("x1", (d: any) => {
@@ -938,6 +1022,10 @@ audioLayer.ready.then((has) => {
           nodeElements
             .attr("cx", (d: any) => d.x || 0)
             .attr("cy", (d: any) => d.y || 0)
+
+          iconElements
+            .attr("x", (d: any) => d.x || 0)
+            .attr("y", (d: any) => d.y || 0)
 
           labelElements
             .attr("x", (d: any) => d.x || 0)
@@ -1078,7 +1166,9 @@ audioLayer.ready.then((has) => {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Agregar Nuevo Nodo</DialogTitle>
+            <DialogTitle>
+              {editingNodeId ? "Renombrar Nodo" : "Agregar Nuevo Nodo"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -1090,13 +1180,13 @@ audioLayer.ready.then((has) => {
                 placeholder="Ingresa el nombre del nodo"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    addNode()
+                    saveNode()
                   }
                 }}
               />
             </div>
-            <Button onClick={addNode} className="w-full">
-              Agregar Nodo
+            <Button onClick={saveNode} className="w-full">
+              {editingNodeId ? "Guardar Nombre" : "Agregar Nodo"}
             </Button>
           </div>
         </DialogContent>
