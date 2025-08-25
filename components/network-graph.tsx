@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { attachAudioLayer } from "@/lib/audio"
+import type { NodeState } from "@/lib/audio/types"
 import { useTheme } from "next-themes"
 import { loadConfig, saveConfig } from "@/lib/config"
 
@@ -109,6 +110,15 @@ const DEFAULT_WEEKS = [
   { id: "week2", name: "Semana 2" },
 ]
 
+const STATE_EMOJI: Record<NodeState, string> = {
+  idle: "⏺️",
+  recording: "🔴",
+  "has-audio": "▶️",
+  playing: "⏸️",
+  paused: "▶️",
+  error: "⚠️",
+}
+
 const createDefaultConfig = (): PersistedConfig => {
   const weekSubjectMaps: Record<string, Record<string, SubjectMap[]>> = {}
   const weekCurrentMapIndex: Record<string, Record<string, number>> = {}
@@ -132,6 +142,7 @@ export default function NetworkGraph() {
   const [currentGroup, setCurrentGroup] = useState<string>("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newNodeName, setNewNodeName] = useState("")
+  const [renamingNodeId, setRenamingNodeId] = useState<string | null>(null)
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
@@ -172,6 +183,22 @@ export default function NetworkGraph() {
   const DELETE_DISTANCE = 150
 
   const simulationRef = useRef<d3.Simulation<GraphNode, Link> | null>(null)
+
+  useEffect(() => {
+    if (nodes.length === 0 && groups.length > 0) {
+      const g = groups[0]
+      const placeholder: GraphNode = {
+        id: `default-${Date.now()}`,
+        name: "Ingresa nombre",
+        group: g.id,
+        color: g.color,
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      }
+      setNodes([placeholder])
+      setLinks([])
+    }
+  }, [nodes, groups])
 
   const randomColor = () =>
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
@@ -300,9 +327,9 @@ export default function NetworkGraph() {
 
   const saveCurrentSubjectData = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const serializedMaps = weekSubjectMapsRef.current[selectedWeek][
-      selectedSubject
-    ].map((m) => ({
+    const subjectMaps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!subjectMaps) return
+    const serializedMaps = subjectMaps.map((m) => ({
       nodes: m.nodes.map(({ id, name, group, color }) => ({
         id,
         name,
@@ -322,7 +349,7 @@ export default function NetworkGraph() {
     localStorage.setItem(
       `currentMapIndex_${selectedWeek}_${selectedSubject}`,
       JSON.stringify(
-        weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
+        weekCurrentMapIndexRef.current[selectedWeek]?.[selectedSubject] ?? 0,
       ),
     )
     persistConfig()
@@ -333,7 +360,11 @@ export default function NetworkGraph() {
     const subject = SUBJECT_DATA[id]
     if (!subject) return
     setSelectedSubject(id)
-    const maps = weekSubjectMapsRef.current[selectedWeek][id]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[id] || []
+    if (!weekSubjectMapsRef.current[selectedWeek]) {
+      weekSubjectMapsRef.current[selectedWeek] = {}
+    }
+    weekSubjectMapsRef.current[selectedWeek][id] = maps
     if (!maps.length) {
       const defaultGroups = JSON.parse(
         JSON.stringify(INITIAL_SUBJECT_GROUPS[id] || []),
@@ -469,7 +500,8 @@ const handleFolderClick = async () => {
       currentMapIndex[selectedSubject] === undefined
     )
       return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     const idx = currentMapIndex[selectedSubject]
     if (!maps[idx]) return
     maps[idx].nodes = nodes.map(({ id, name, group, color }) => ({
@@ -533,7 +565,8 @@ const handleFolderClick = async () => {
   const goToMapIndex = useCallback(
     (index: number) => {
       if (!selectedWeek || !selectedSubject) return
-      const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+      const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+      if (!maps) return
       if (index < 0 || index >= maps.length) return
       weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = index
       setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: index }))
@@ -550,7 +583,12 @@ const handleFolderClick = async () => {
 
   const createNewMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps =
+      weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject] || []
+    if (!weekSubjectMapsRef.current[selectedWeek]) {
+      weekSubjectMapsRef.current[selectedWeek] = {}
+    }
+    weekSubjectMapsRef.current[selectedWeek][selectedSubject] = maps
     const newIndex = maps.length
     weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = newIndex
     setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: newIndex }))
@@ -568,7 +606,8 @@ const handleFolderClick = async () => {
 
   const goToPrevMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     let idx = currentMapIndex[selectedSubject]
     if (isAwaitingMap) {
       if (maps.length === 0) return
@@ -588,7 +627,8 @@ const handleFolderClick = async () => {
 
   const goToNextMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     let idx = currentMapIndex[selectedSubject]
     if (isAwaitingMap) {
       if (maps.length === 0) return
@@ -608,6 +648,19 @@ const handleFolderClick = async () => {
 
   const addNode = useCallback(() => {
     if (!newNodeName.trim() || !currentGroup) return
+
+    if (renamingNodeId) {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === renamingNodeId ? { ...n, name: newNodeName.trim() } : n,
+        ),
+      )
+      setRenamingNodeId(null)
+      setNewNodeName("")
+      setIsDialogOpen(false)
+      if (selectedWeek && selectedSubject) saveCurrentSubjectData()
+      return
+    }
 
     const groupData = groups.find((g) => g.id === currentGroup)
     if (!groupData) return
@@ -641,7 +694,12 @@ const handleFolderClick = async () => {
     setNewNodePos(null)
 
     if (selectedWeek && selectedSubject) {
-      const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+      const maps =
+        weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject] || []
+      if (!weekSubjectMapsRef.current[selectedWeek]) {
+        weekSubjectMapsRef.current[selectedWeek] = {}
+      }
+      weekSubjectMapsRef.current[selectedWeek][selectedSubject] = maps
       if (isAwaitingMap) {
         maps.push({ nodes: updatedNodes, links: updatedLinks, groups })
         weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] =
@@ -671,6 +729,7 @@ const handleFolderClick = async () => {
     isAwaitingMap,
     currentMapIndex,
     saveCurrentSubjectData,
+    renamingNodeId,
   ])
 
   useEffect(() => {
@@ -808,6 +867,20 @@ const handleFolderClick = async () => {
       .attr("cy", (d) => d.y ?? height / 2)
       .style("cursor", "pointer")
 
+    const iconsGroup = container.append("g").attr("class", "node-icons")
+    const iconElements = iconsGroup
+      .selectAll("text")
+      .data(nodesCopy)
+      .enter()
+      .append("text")
+      .attr("class", "node-icon")
+      .attr("data-id", (d) => d.id)
+      .attr("text-anchor", "middle")
+      .attr("alignment-baseline", "middle")
+      .attr("font-size", 16)
+      .style("pointer-events", "none")
+      .text(STATE_EMOJI.idle)
+
     nodeElements.call(
       d3
         .drag<SVGCircleElement, GraphNode>()
@@ -856,7 +929,26 @@ const handleFolderClick = async () => {
       nodesSelection: nodeElements.nodes(),
       getExtId: (el) => (el as any).__data__.id,
       rootElement: svgElement,
-      options: { allowLocalFileSystem: true, autoSaveMetadata: true },
+      options: {
+        allowLocalFileSystem: true,
+        autoSaveMetadata: true,
+        onStateChange: (id, st) => {
+          d3.select(svgElement)
+            .select(`text.node-icon[data-id='${id}']`)
+            .text(STATE_EMOJI[st])
+          if (st === 'has-audio') {
+            const node = nodes.find((n) => n.id === id)
+            if (node && node.name === 'Ingresa nombre') {
+              setRenamingNodeId(id)
+              setNewNodeName("")
+              setIsDialogOpen(true)
+            }
+          }
+        },
+        onError: (code) => {
+          console.error("#error", code)
+        },
+      },
     })
 audioLayerRef.current = audioLayer
 audioLayer.ready.then((has) => {
@@ -888,8 +980,9 @@ audioLayer.ready.then((has) => {
       const linkNodes = linkElements.nodes()
       const nodeNodes = nodeElements.nodes()
       const labelNodes = labelElements.nodes()
+      const iconNodes = iconElements.nodes()
 
-      if (!nodeNodes.length || !labelNodes.length) {
+      if (!nodeNodes.length || !labelNodes.length || !iconNodes.length) {
         console.log("[v0] Elements not available during tick, stopping simulation")
         simulation.stop()
         return
@@ -916,6 +1009,12 @@ audioLayer.ready.then((has) => {
         return
       }
 
+      if (!iconNodes.every(isValidDomNode)) {
+        console.log("[v0] Invalid icon elements detected, stopping simulation")
+        simulation.stop()
+        return
+      }
+
       try {
         linkElements
           .attr("x1", (d: any) => {
@@ -938,6 +1037,10 @@ audioLayer.ready.then((has) => {
           nodeElements
             .attr("cx", (d: any) => d.x || 0)
             .attr("cy", (d: any) => d.y || 0)
+
+          iconElements
+            .attr("x", (d: any) => d.x || 0)
+            .attr("y", (d: any) => d.y || 0)
 
           labelElements
             .attr("x", (d: any) => d.x || 0)
