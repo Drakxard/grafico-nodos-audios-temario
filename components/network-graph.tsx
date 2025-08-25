@@ -211,6 +211,23 @@ export default function NetworkGraph() {
     }
     await audioLayerRef.current.writeConfig(cfg)
   }, [weeks, theme])
+
+  const clampIndexes = () => {
+    Object.keys(weekSubjectMapsRef.current).forEach((weekId) => {
+      const subjects = weekSubjectMapsRef.current[weekId] || {}
+      weekCurrentMapIndexRef.current[weekId] =
+        weekCurrentMapIndexRef.current[weekId] || {}
+      Object.keys(subjects).forEach((subjectId) => {
+        const maps = subjects[subjectId] || []
+        const maxIdx = Math.max(0, maps.length - 1)
+        let idx = weekCurrentMapIndexRef.current[weekId][subjectId]
+        if (idx === undefined || idx < 0 || idx > maxIdx) {
+          weekCurrentMapIndexRef.current[weekId][subjectId] = maxIdx
+        }
+      })
+    })
+  }
+
   const loadPersistedData = useCallback(async () => {
     if (audioLayerRef.current?.hasFolderAccess()) {
       const cfg = await audioLayerRef.current.readConfig<PersistedConfig>()
@@ -227,6 +244,7 @@ export default function NetworkGraph() {
         await audioLayerRef.current.writeConfig(def)
         setTheme(def.theme)
       }
+      clampIndexes()
       return
     }
     const storedWeeks = localStorage.getItem("weeks")
@@ -286,6 +304,7 @@ export default function NetworkGraph() {
           : Math.max(0, maps.length - 1)
       })
     })
+    clampIndexes()
   }, [])
 
   const addWeek = () => {
@@ -324,7 +343,7 @@ export default function NetworkGraph() {
     setStep(2)
   }
 
-  const saveCurrentSubjectData = useCallback(() => {
+  const saveCurrentSubjectData = useCallback(async () => {
     if (!selectedWeek || !selectedSubject) return
     const serializedMaps = weekSubjectMapsRef.current[selectedWeek][
       selectedSubject
@@ -351,7 +370,7 @@ export default function NetworkGraph() {
         weekCurrentMapIndexRef.current[selectedWeek][selectedSubject],
       ),
     )
-    persistConfig()
+    await persistConfig()
   }, [selectedWeek, selectedSubject, persistConfig])
 
   const selectSubject = (id: string) => {
@@ -376,7 +395,12 @@ export default function NetworkGraph() {
       setStep(3)
       return
     }
-    const idx = currentMapIndex[id] ?? maps.length - 1
+    let idx = currentMapIndex[id]
+    if (idx === undefined || idx < 0 || idx >= maps.length) {
+      idx = Math.max(0, maps.length - 1)
+      weekCurrentMapIndexRef.current[selectedWeek][id] = idx
+      setCurrentMapIndex((prev) => ({ ...prev, [id]: idx }))
+    }
     const map = maps[idx]
     setNodes(map.nodes)
     setLinks(map.links)
@@ -389,7 +413,7 @@ export default function NetworkGraph() {
 
   const handleBack = useCallback(() => {
     if (step === 3) {
-      saveCurrentSubjectData()
+      void saveCurrentSubjectData()
       setSelectedSubject(null)
       setStep(2)
     } else if (step === 2) {
@@ -519,7 +543,7 @@ const handleFolderClick = async () => {
         target: typeof l.target === "string" ? l.target : l.target.id,
       }))
     maps[idx].groups = groups
-    saveCurrentSubjectData()
+    void saveCurrentSubjectData()
   }, [
     nodes,
     links,
@@ -560,7 +584,7 @@ const handleFolderClick = async () => {
       setGroups(map.groups)
       setCurrentGroup(map.groups[0]?.id || "")
       setIsAwaitingMap(false)
-      saveCurrentSubjectData()
+      void saveCurrentSubjectData()
     },
     [selectedWeek, selectedSubject, saveCurrentSubjectData],
   )
@@ -623,7 +647,7 @@ const handleFolderClick = async () => {
     goToMapIndex,
   ])
 
-  const addNode = useCallback(() => {
+  const addNode = useCallback(async () => {
     if (!newNodeName.trim() || !currentGroup) return
 
     const groupData = groups.find((g) => g.id === currentGroup)
@@ -674,7 +698,7 @@ const handleFolderClick = async () => {
           maps[idx] = { nodes: updatedNodes, links: updatedLinks, groups }
         }
       }
-      saveCurrentSubjectData()
+      await saveCurrentSubjectData()
     }
   }, [
     newNodeName,
