@@ -359,8 +359,8 @@ export default function NetworkGraph() {
     const subject = SUBJECT_DATA[id]
     if (!subject) return
     setSelectedSubject(id)
-    const maps = weekSubjectMapsRef.current[selectedWeek][id]
-    if (!maps.length) {
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[id]
+    if (!maps || !maps.length) {
       const defaultGroups = JSON.parse(
         JSON.stringify(INITIAL_SUBJECT_GROUPS[id] || []),
       )
@@ -377,6 +377,12 @@ export default function NetworkGraph() {
       return
     }
     const idx = currentMapIndex[id] ?? maps.length - 1
+    if (weekCurrentMapIndexRef.current[selectedWeek][id] === undefined) {
+      weekCurrentMapIndexRef.current[selectedWeek][id] = idx
+    }
+    if (currentMapIndex[id] === undefined) {
+      setCurrentMapIndex((prev) => ({ ...prev, [id]: idx }))
+    }
     const map = maps[idx]
     setNodes(map.nodes)
     setLinks(map.links)
@@ -550,8 +556,9 @@ const handleFolderClick = async () => {
   const goToMapIndex = useCallback(
     (index: number) => {
       if (!selectedWeek || !selectedSubject) return
-      const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
-      if (index < 0 || index >= maps.length) return
+      const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+      if (!maps || !Number.isFinite(index) || index < 0 || index >= maps.length)
+        return
       weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] = index
       setCurrentMapIndex((prev) => ({ ...prev, [selectedSubject]: index }))
       const map = maps[index]
@@ -585,8 +592,10 @@ const handleFolderClick = async () => {
 
   const goToPrevMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     let idx = currentMapIndex[selectedSubject]
+    if (typeof idx !== "number") return
     if (isAwaitingMap) {
       if (maps.length === 0) return
       const newIndex = maps.length - 1
@@ -605,8 +614,10 @@ const handleFolderClick = async () => {
 
   const goToNextMap = useCallback(() => {
     if (!selectedWeek || !selectedSubject) return
-    const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+    const maps = weekSubjectMapsRef.current[selectedWeek]?.[selectedSubject]
+    if (!maps) return
     let idx = currentMapIndex[selectedSubject]
+    if (typeof idx !== "number") return
     if (isAwaitingMap) {
       if (maps.length === 0) return
       const newIndex = maps.length - 1
