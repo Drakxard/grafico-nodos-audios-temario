@@ -44,6 +44,8 @@ interface PersistedConfig {
   weekSubjectMaps: Record<string, Record<string, SubjectMap[]>>
   weekCurrentMapIndex: Record<string, Record<string, number>>
   theme: string
+  nodePadding: number
+  nodeRadius: number
 }
 
 const INITIAL_SUBJECT_GROUPS: Record<string, Group[]> = {
@@ -131,7 +133,14 @@ const createDefaultConfig = (): PersistedConfig => {
       weekCurrentMapIndex[week.id][subjectId] = maps.length - 1
     })
   })
-  return { weeks: DEFAULT_WEEKS, weekSubjectMaps, weekCurrentMapIndex, theme: 'light' }
+  return {
+    weeks: DEFAULT_WEEKS,
+    weekSubjectMaps,
+    weekCurrentMapIndex,
+    theme: 'light',
+    nodePadding: 35,
+    nodeRadius: 20,
+  }
 }
 
 export default function NetworkGraph() {
@@ -151,6 +160,7 @@ export default function NetworkGraph() {
     null,
   )
   const [nodePadding, setNodePadding] = useState(35)
+  const [nodeRadius, setNodeRadius] = useState(20)
   const [isAwaitingMap, setIsAwaitingMap] = useState(false)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
   const [folderReady, setFolderReady] = useState(false)
@@ -208,9 +218,11 @@ export default function NetworkGraph() {
       weekSubjectMaps: weekSubjectMapsRef.current,
       weekCurrentMapIndex: weekCurrentMapIndexRef.current,
       theme: theme || 'light',
+      nodePadding,
+      nodeRadius,
     }
     await audioLayerRef.current.writeConfig(cfg)
-  }, [weeks, theme])
+  }, [weeks, theme, nodePadding, nodeRadius])
 
   const clampIndexes = () => {
     Object.keys(weekSubjectMapsRef.current).forEach((weekId) => {
@@ -236,6 +248,8 @@ export default function NetworkGraph() {
         weekSubjectMapsRef.current = cfg.weekSubjectMaps || {}
         weekCurrentMapIndexRef.current = cfg.weekCurrentMapIndex || {}
         if (cfg.theme) setTheme(cfg.theme)
+        if (cfg.nodePadding !== undefined) setNodePadding(cfg.nodePadding)
+        if (cfg.nodeRadius !== undefined) setNodeRadius(cfg.nodeRadius)
       } else {
         const def = createDefaultConfig()
         setWeeks(def.weeks)
@@ -243,6 +257,8 @@ export default function NetworkGraph() {
         weekCurrentMapIndexRef.current = def.weekCurrentMapIndex
         await audioLayerRef.current.writeConfig(def)
         setTheme(def.theme)
+        setNodePadding(def.nodePadding)
+        setNodeRadius(def.nodeRadius)
       }
       clampIndexes()
       return
@@ -252,6 +268,10 @@ export default function NetworkGraph() {
     setWeeks(weeksData)
     const storedTheme = localStorage.getItem('theme') || 'light'
     setTheme(storedTheme)
+    const storedPadding = localStorage.getItem('nodePadding')
+    setNodePadding(storedPadding ? JSON.parse(storedPadding) : 35)
+    const storedRadius = localStorage.getItem('nodeRadius')
+    setNodeRadius(storedRadius ? JSON.parse(storedRadius) : 20)
     weeksData.forEach((week: { id: string; name: string }) => {
       weekSubjectMapsRef.current[week.id] = {}
       weekCurrentMapIndexRef.current[week.id] = {}
@@ -512,6 +532,14 @@ const handleFolderClick = async () => {
   }, [theme, persistConfig])
 
   useEffect(() => {
+    localStorage.setItem('nodePadding', JSON.stringify(nodePadding))
+    localStorage.setItem('nodeRadius', JSON.stringify(nodeRadius))
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      persistConfig()
+    }
+  }, [nodePadding, nodeRadius, persistConfig])
+
+  useEffect(() => {
     if (
       !selectedWeek ||
       !selectedSubject ||
@@ -739,6 +767,34 @@ const handleFolderClick = async () => {
           event.preventDefault()
           setShowAllGroups(true)
           break
+        case "g":
+        case "G":
+          event.preventDefault()
+          setNodePadding((p) => p + 5)
+          break
+        case "c":
+        case "C":
+          event.preventDefault()
+          setNodePadding((p) => Math.max(nodeRadius, p - 5))
+          break
+        case "m":
+        case "M":
+          event.preventDefault()
+          setNodeRadius((r) => {
+            const newR = r + 5
+            setNodePadding((p) => Math.max(p, newR))
+            return newR
+          })
+          break
+        case "n":
+        case "N":
+          event.preventDefault()
+          setNodeRadius((r) => {
+            const newR = Math.max(5, r - 5)
+            setNodePadding((p) => Math.max(p, newR))
+            return newR
+          })
+          break
         case "i":
         case "I":
           if (event.ctrlKey) {
@@ -752,7 +808,7 @@ const handleFolderClick = async () => {
 
     window.addEventListener("keydown", handleKeyPress)
     return () => window.removeEventListener("keydown", handleKeyPress)
-  }, [goToPrevMap, goToNextMap, isMounted])
+  }, [goToPrevMap, goToNextMap, isMounted, nodeRadius])
 
   useEffect(() => {
     if (!isMounted || !svgRef.current) {
@@ -841,7 +897,7 @@ const handleFolderClick = async () => {
       .data(nodesCopy)
       .enter()
       .append("circle")
-      .attr("r", 20)
+      .attr("r", nodeRadius)
       .attr("fill", (d) => d.color)
       .attr("stroke", "#fff")
       .attr("stroke-width", 2)
@@ -1038,7 +1094,7 @@ audioLayer.ready.then((has) => {
         simulationRef.current = null
       }
     }
-  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding, loadPersistedData])
+  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding, nodeRadius, loadPersistedData])
 
   if (!isMounted) {
     return <div className="w-full h-screen bg-background" />
