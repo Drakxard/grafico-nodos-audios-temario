@@ -1,5 +1,7 @@
 export interface AppConfig {
   folderName?: string;
+  nodePadding?: number;
+  nodeSize?: number;
 }
 
 const KEY = 'appConfig';
