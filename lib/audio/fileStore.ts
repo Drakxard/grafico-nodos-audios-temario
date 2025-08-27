@@ -146,11 +146,21 @@ export class FileStore {
 
   async writeConfig<T = any>(cfg: T): Promise<void> {
     if (this.dirHandle) {
-      const dataDir = await this.getDataDir();
-      const file = await dataDir.getFileHandle('config.json', { create: true });
-      const writable = await (file as any).createWritable();
-      await writable.write(JSON.stringify(cfg));
-      await writable.close();
+      try {
+        const dataDir = await this.getDataDir();
+        const file = await dataDir.getFileHandle('config.json', { create: true });
+        const writable = await (file as any).createWritable();
+        await writable.write(JSON.stringify(cfg));
+        await writable.close();
+      } catch (e) {
+        console.error('#writeConfig failed', e);
+        // fall through to IndexedDB persistence as a fallback
+        const db = await this.openDB();
+        const tx = db.transaction('config', 'readwrite');
+        tx.objectStore('config').put(cfg, 'singleton');
+        await (tx as any).done?.catch(() => {});
+        return;
+      }
     } else {
       const db = await this.openDB();
       const tx = db.transaction('config', 'readwrite');
