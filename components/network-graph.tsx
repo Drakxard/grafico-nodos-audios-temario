@@ -213,15 +213,19 @@ export default function NetworkGraph() {
     "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")
   const persistConfig = useCallback(async () => {
     if (!audioLayerRef.current?.hasFolderAccess()) return
-    const cfg: PersistedConfig = {
-      weeks,
-      weekSubjectMaps: weekSubjectMapsRef.current,
-      weekCurrentMapIndex: weekCurrentMapIndexRef.current,
-      theme: theme || 'light',
-      nodePadding,
-      nodeRadius,
+    try {
+      const cfg: PersistedConfig = {
+        weeks,
+        weekSubjectMaps: weekSubjectMapsRef.current,
+        weekCurrentMapIndex: weekCurrentMapIndexRef.current,
+        theme: theme || 'light',
+        nodePadding,
+        nodeRadius,
+      }
+      await audioLayerRef.current.writeConfig(cfg)
+    } catch (e) {
+      console.error('persistConfig failed', e)
     }
-    await audioLayerRef.current.writeConfig(cfg)
   }, [weeks, theme, nodePadding, nodeRadius])
 
   const clampIndexes = () => {
@@ -742,6 +746,31 @@ const handleFolderClick = async () => {
     saveCurrentSubjectData,
   ])
 
+  const handleCanvasDrop = async (e: React.DragEvent<SVGSVGElement>) => {
+    e.preventDefault()
+    if (e.target !== e.currentTarget) return
+    const file = e.dataTransfer?.files?.[0]
+    if (!file || !svgRef.current) return
+    const has = await ensureAudioLayer()
+    if (!has) return
+    const rect = svgRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const group = groups.find((g) => g.id === currentGroup) || groups[0]
+    if (!group) return
+    const id = Date.now().toString()
+    const node: GraphNode = {
+      id,
+      name: file.name.replace(/\.[^/.]+$/, ''),
+      group: group.id,
+      color: group.color,
+      x,
+      y,
+    }
+    setNodes((prev) => [...prev, node])
+    await audioLayerRef.current?.importFile(id, file)
+  }
+
   useEffect(() => {
     if (!isMounted) return
 
@@ -1102,7 +1131,14 @@ audioLayer.ready.then((has) => {
 
   return (
     <div className="w-full h-screen bg-background text-foreground relative overflow-hidden">
-      <svg ref={svgRef} width="100%" height="100%" className="bg-background" />
+      <svg
+        ref={svgRef}
+        width="100%"
+        height="100%"
+        className="bg-background"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleCanvasDrop}
+      />
       {step > 0 && (
         <Button
           className="absolute top-4 left-4 z-[60]"

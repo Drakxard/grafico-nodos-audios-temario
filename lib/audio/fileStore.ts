@@ -146,11 +146,15 @@ export class FileStore {
 
   async writeConfig<T = any>(cfg: T): Promise<void> {
     if (this.dirHandle) {
-      const dataDir = await this.getDataDir();
-      const file = await dataDir.getFileHandle('config.json', { create: true });
-      const writable = await (file as any).createWritable();
-      await writable.write(JSON.stringify(cfg));
-      await writable.close();
+      try {
+        const dataDir = await this.getDataDir();
+        const file = await dataDir.getFileHandle('config.json', { create: true });
+        const writable = await (file as any).createWritable();
+        await writable.write(JSON.stringify(cfg));
+        await writable.close();
+      } catch (e) {
+        console.error('writeConfig failed', e);
+      }
     } else {
       const db = await this.openDB();
       const tx = db.transaction('config', 'readwrite');
@@ -238,11 +242,15 @@ export class FileStore {
 
   async writeMeta(meta: MetadataFile): Promise<void> {
     if (this.dirHandle) {
-      const dataDir = await this.getDataDir();
-      const file = await dataDir.getFileHandle('metadata.json', { create: true });
-      const writable = await (file as any).createWritable();
-      await writable.write(JSON.stringify(meta));
-      await writable.close();
+      try {
+        const dataDir = await this.getDataDir();
+        const file = await dataDir.getFileHandle('metadata.json', { create: true });
+        const writable = await (file as any).createWritable();
+        await writable.write(JSON.stringify(meta));
+        await writable.close();
+      } catch (e) {
+        console.error('writeMeta failed', e);
+      }
     } else {
       const db = await this.openDB();
       const tx = db.transaction('metadata', 'readwrite');
