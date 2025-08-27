@@ -44,6 +44,8 @@ interface PersistedConfig {
   weekSubjectMaps: Record<string, Record<string, SubjectMap[]>>
   weekCurrentMapIndex: Record<string, Record<string, number>>
   theme: string
+  nodePadding?: number
+  nodeSize?: number
 }
 
 const INITIAL_SUBJECT_GROUPS: Record<string, Group[]> = {
@@ -131,7 +133,14 @@ const createDefaultConfig = (): PersistedConfig => {
       weekCurrentMapIndex[week.id][subjectId] = maps.length - 1
     })
   })
-  return { weeks: DEFAULT_WEEKS, weekSubjectMaps, weekCurrentMapIndex, theme: 'light' }
+  return {
+    weeks: DEFAULT_WEEKS,
+    weekSubjectMaps,
+    weekCurrentMapIndex,
+    theme: 'light',
+    nodePadding: 35,
+    nodeSize: 20,
+  }
 }
 
 export default function NetworkGraph() {
@@ -151,6 +160,7 @@ export default function NetworkGraph() {
     null,
   )
   const [nodePadding, setNodePadding] = useState(35)
+  const [nodeSize, setNodeSize] = useState(20)
   const [isAwaitingMap, setIsAwaitingMap] = useState(false)
   const audioLayerRef = useRef<ReturnType<typeof attachAudioLayer> | null>(null)
   const [folderReady, setFolderReady] = useState(false)
@@ -208,9 +218,11 @@ export default function NetworkGraph() {
       weekSubjectMaps: weekSubjectMapsRef.current,
       weekCurrentMapIndex: weekCurrentMapIndexRef.current,
       theme: theme || 'light',
+      nodePadding,
+      nodeSize,
     }
     await audioLayerRef.current.writeConfig(cfg)
-  }, [weeks, theme])
+  }, [weeks, theme, nodePadding, nodeSize])
 
   const clampIndexes = () => {
     Object.keys(weekSubjectMapsRef.current).forEach((weekId) => {
@@ -236,6 +248,9 @@ export default function NetworkGraph() {
         weekSubjectMapsRef.current = cfg.weekSubjectMaps || {}
         weekCurrentMapIndexRef.current = cfg.weekCurrentMapIndex || {}
         if (cfg.theme) setTheme(cfg.theme)
+        if (cfg.nodeSize !== undefined) setNodeSize(cfg.nodeSize)
+        if (cfg.nodePadding !== undefined)
+          setNodePadding(Math.max(cfg.nodePadding, cfg.nodeSize ?? nodeSize))
       } else {
         const def = createDefaultConfig()
         setWeeks(def.weeks)
@@ -243,6 +258,8 @@ export default function NetworkGraph() {
         weekCurrentMapIndexRef.current = def.weekCurrentMapIndex
         await audioLayerRef.current.writeConfig(def)
         setTheme(def.theme)
+        setNodeSize(def.nodeSize)
+        setNodePadding(Math.max(def.nodePadding, def.nodeSize))
       }
       clampIndexes()
       return
@@ -252,6 +269,9 @@ export default function NetworkGraph() {
     setWeeks(weeksData)
     const storedTheme = localStorage.getItem('theme') || 'light'
     setTheme(storedTheme)
+    const cfg = loadConfig()
+    if (cfg.nodePadding !== undefined) setNodePadding(cfg.nodePadding)
+    if (cfg.nodeSize !== undefined) setNodeSize(cfg.nodeSize)
     weeksData.forEach((week: { id: string; name: string }) => {
       weekSubjectMapsRef.current[week.id] = {}
       weekCurrentMapIndexRef.current[week.id] = {}
@@ -305,7 +325,7 @@ export default function NetworkGraph() {
       })
     })
     clampIndexes()
-  }, [])
+  }, [nodeSize])
 
   const addWeek = () => {
     const newNumber = weeks.length + 1
@@ -462,7 +482,7 @@ export default function NetworkGraph() {
       if (has) {
         const name = audioLayerRef.current.getFolderName() || ""
         setFolderName(name)
-        saveConfig({ folderName: name })
+        saveConfig({ ...loadConfig(), folderName: name, nodePadding, nodeSize })
       }
       return has
     }
@@ -476,7 +496,7 @@ const handleFolderClick = async () => {
     if (ok) {
       const name = audioLayerRef.current?.getFolderName() || ""
       setFolderName(name)
-      saveConfig({ folderName: name })
+      saveConfig({ ...loadConfig(), folderName: name, nodePadding, nodeSize })
       await loadPersistedData()
     }
   }
@@ -489,6 +509,8 @@ const handleFolderClick = async () => {
     setIsMounted(true)
     const cfg = loadConfig()
     if (cfg.folderName) setFolderName(cfg.folderName)
+    if (cfg.nodePadding !== undefined) setNodePadding(cfg.nodePadding)
+    if (cfg.nodeSize !== undefined) setNodeSize(cfg.nodeSize)
     ensureAudioLayer().then((has) => {
       if (has) {
         loadPersistedData()
@@ -510,6 +532,14 @@ const handleFolderClick = async () => {
       persistConfig()
     }
   }, [theme, persistConfig])
+
+  useEffect(() => {
+    const cfg = loadConfig()
+    saveConfig({ ...cfg, nodePadding, nodeSize })
+    if (audioLayerRef.current?.hasFolderAccess()) {
+      persistConfig()
+    }
+  }, [nodePadding, nodeSize, persistConfig])
 
   useEffect(() => {
     if (
@@ -739,6 +769,34 @@ const handleFolderClick = async () => {
           event.preventDefault()
           setShowAllGroups(true)
           break
+        case "g":
+        case "G":
+          event.preventDefault()
+          setNodePadding((p) => p + 5)
+          break
+        case "c":
+        case "C":
+          event.preventDefault()
+          setNodePadding((p) => Math.max(nodeSize, p - 5))
+          break
+        case "m":
+        case "M":
+          event.preventDefault()
+          setNodeSize((s) => {
+            const next = s + 5
+            setNodePadding((p) => Math.max(p, next))
+            return next
+          })
+          break
+        case "n":
+        case "N":
+          event.preventDefault()
+          setNodeSize((s) => {
+            const next = Math.max(5, s - 5)
+            setNodePadding((p) => Math.max(p, next))
+            return next
+          })
+          break
         case "i":
         case "I":
           if (event.ctrlKey) {
@@ -752,7 +810,7 @@ const handleFolderClick = async () => {
 
     window.addEventListener("keydown", handleKeyPress)
     return () => window.removeEventListener("keydown", handleKeyPress)
-  }, [goToPrevMap, goToNextMap, isMounted])
+  }, [goToPrevMap, goToNextMap, isMounted, nodeSize])
 
   useEffect(() => {
     if (!isMounted || !svgRef.current) {
@@ -841,7 +899,7 @@ const handleFolderClick = async () => {
       .data(nodesCopy)
       .enter()
       .append("circle")
-      .attr("r", 20)
+      .attr("r", nodeSize)
       .attr("fill", (d) => d.color)
       .attr("stroke", "#fff")
       .attr("stroke-width", 2)
@@ -930,7 +988,7 @@ audioLayer.ready.then((has) => {
   if (has) {
     const name = audioLayer.getFolderName() || ""
     setFolderName(name)
-    saveConfig({ folderName: name })
+    saveConfig({ ...loadConfig(), folderName: name, nodePadding, nodeSize })
     loadPersistedData()
   }
 })
@@ -1018,7 +1076,7 @@ audioLayer.ready.then((has) => {
 
           labelElements
             .attr("x", (d: any) => d.x || 0)
-            .attr("y", (d: any) => (d.y || 0) + 30)
+            .attr("y", (d: any) => (d.y || 0) + nodeSize + 10)
       } catch (error) {
         console.log("[v0] Error during tick update, stopping simulation:", error)
         simulation.stop()
@@ -1038,7 +1096,7 @@ audioLayer.ready.then((has) => {
         simulationRef.current = null
       }
     }
-  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding, loadPersistedData])
+  }, [getVisibleNodes, getVisibleLinks, isMounted, nodePadding, nodeSize, loadPersistedData])
 
   if (!isMounted) {
     return <div className="w-full h-screen bg-background" />
