@@ -221,7 +221,11 @@ export default function NetworkGraph() {
       nodePadding,
       nodeRadius,
     }
-    await audioLayerRef.current.writeConfig(cfg)
+    try {
+      await audioLayerRef.current.writeConfig(cfg)
+    } catch (err) {
+      console.error('Failed to persist config', err)
+    }
   }, [weeks, theme, nodePadding, nodeRadius])
 
   const clampIndexes = () => {
@@ -741,6 +745,90 @@ const handleFolderClick = async () => {
     currentMapIndex,
     saveCurrentSubjectData,
   ])
+
+  const addNodeFromFile = useCallback(
+    async (file: File, pos: { x: number; y: number }) => {
+      const baseName = file.name.replace(/\.[^/.]+$/, '')
+      const groupData =
+        groups.find((g) => g.id === currentGroup) || groups[0]
+      if (!groupData) return
+
+      const newNode: GraphNode = {
+        id: Date.now().toString(),
+        name: baseName,
+        group: groupData.id,
+        color: groupData.color,
+        x: pos.x,
+        y: pos.y,
+      }
+
+      const newLinks = nodes.map((n) => ({ source: newNode.id, target: n.id }))
+      const updatedNodes = [...nodes, newNode]
+      const updatedLinks = [...links, ...newLinks]
+      setNodes(updatedNodes)
+      setLinks(updatedLinks)
+
+      if (selectedWeek && selectedSubject) {
+        const maps = weekSubjectMapsRef.current[selectedWeek][selectedSubject]
+        if (isAwaitingMap) {
+          maps.push({ nodes: updatedNodes, links: updatedLinks, groups })
+          weekCurrentMapIndexRef.current[selectedWeek][selectedSubject] =
+            maps.length - 1
+          setCurrentMapIndex((prev) => ({
+            ...prev,
+            [selectedSubject]: maps.length - 1,
+          }))
+          setIsAwaitingMap(false)
+        } else {
+          const idx = currentMapIndex[selectedSubject]
+          if (maps[idx]) {
+            maps[idx] = { nodes: updatedNodes, links: updatedLinks, groups }
+          }
+        }
+        await saveCurrentSubjectData()
+      }
+
+      await audioLayerRef.current?.importFile(newNode.id, file)
+    },
+    [
+      currentGroup,
+      groups,
+      nodes,
+      links,
+      selectedWeek,
+      selectedSubject,
+      isAwaitingMap,
+      currentMapIndex,
+      saveCurrentSubjectData,
+    ],
+  )
+
+  useEffect(() => {
+    const svgEl = svgRef.current
+    if (!svgEl) return
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault()
+    }
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault()
+      const file = e.dataTransfer?.files?.[0]
+      if (!file) return
+      const rect = svgEl.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      void addNodeFromFile(file, { x, y })
+    }
+
+    svgEl.addEventListener('dragover', handleDragOver)
+    svgEl.addEventListener('drop', handleDrop)
+
+    return () => {
+      svgEl.removeEventListener('dragover', handleDragOver)
+      svgEl.removeEventListener('drop', handleDrop)
+    }
+  }, [addNodeFromFile])
 
   useEffect(() => {
     if (!isMounted) return
